@@ -13,6 +13,7 @@ class OrderCreate(BaseModel):
 class OrderResponse(BaseModel):
     id: int
     store_id: int
+    courier_id: int | None
     customer_name: str
     customer_phone: str
     delivery_address: str
@@ -24,3 +25,7 @@ class OrderResponse(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: OrderStatus
+
+
+class AssignCourierRequest(BaseModel):
+    courier_id: int

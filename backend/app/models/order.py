@@ -28,6 +28,11 @@ class Order(Base):
         ForeignKey("stores.id"),
     )
 
+    courier_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"),
+        nullable=True,
+    )
+
     customer_name: Mapped[str] = mapped_column(
         String(255),
     )
@@ -52,3 +57,5 @@ class Order(Base):
     store: Mapped["Store"] = relationship(
         back_populates="orders",
     )
+
+    courier: Mapped["User"] = relationship()

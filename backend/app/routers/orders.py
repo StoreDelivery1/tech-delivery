@@ -1,7 +1,11 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.security import get_current_user
 from app.dependencies import get_db
+from app.models.user import User
 from app.schemas.order import (
     OrderCreate,
     OrderResponse,
@@ -44,6 +48,25 @@ def update_order_status(
             db=db,
             order_id=order_id,
             new_status=data.status,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+@router.patch("/{order_id}/assign", response_model=OrderResponse)
+def assign_courier(
+    order_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    try:
+        return OrderService.assign_courier(
+            db=db,
+            order_id=order_id,
+            courier_id=current_user.id,
         )
     except ValueError as e:
         raise HTTPException(

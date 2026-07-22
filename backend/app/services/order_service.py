@@ -60,3 +60,29 @@ class OrderService:
         db.refresh(order)
 
         return order
+
+    @staticmethod
+    def assign_courier(
+        db: Session,
+        order_id: int,
+        courier_id: int,
+    ) -> Order:
+
+        order = db.get(Order, order_id)
+
+        if order is None:
+            raise ValueError("Order not found")
+
+        if order.courier_id is not None:
+            raise ValueError("Order already assigned")
+
+        if order.status != OrderStatus.CREATED:
+            raise ValueError("Only CREATED orders can be assigned")
+
+        order.courier_id = courier_id
+        order.status = OrderStatus.ACCEPTED
+
+        db.commit()
+        db.refresh(order)
+
+        return order
