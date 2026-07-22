@@ -1,5 +1,6 @@
-from dotenv import load_dotenv
 import os
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
@@ -22,6 +23,11 @@ class Settings:
             "ACCESS_TOKEN_EXPIRE_MINUTES",
             "60",
         )
+    )
+
+    BOT_TOKEN: str = os.getenv(
+        "BOT_TOKEN",
+        "",
     )
 
 

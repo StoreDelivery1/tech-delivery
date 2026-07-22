@@ -1,6 +1,7 @@
 import enum
+from datetime import datetime
 
-from sqlalchemy import Enum, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -63,6 +64,21 @@ class User(Base):
         nullable=True,
     )
 
+    is_online: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+    )
+
+    last_seen: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
     store: Mapped["Store"] = relationship(
         back_populates="managers",
+    )
+
+    orders: Mapped[list["Order"]] = relationship(
+        back_populates="courier",
+        foreign_keys="Order.courier_id",
     )
