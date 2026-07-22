@@ -1,11 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.database.session import SessionLocal
+from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.user import UserCreate, UserResponse
-
 
 router = APIRouter(
     prefix="/users",
@@ -13,45 +11,22 @@ router = APIRouter(
 )
 
 
-def get_db():
-    db = SessionLocal()
-
-    try:
-        yield db
-    finally:
-        db.close()
-
-
 @router.post("/", response_model=UserResponse)
 def create_user(
-    user_data: UserCreate,
+    user: UserCreate,
     db: Session = Depends(get_db),
 ):
-    existing_user = db.scalar(
-        select(User).where(User.telegram_id == user_data.telegram_id)
-    )
+    new_user = User(**user.model_dump())
 
-    if existing_user:
-        raise HTTPException(
-            status_code=409,
-            detail="User with this Telegram ID already exists",
-        )
-
-    user = User(
-        telegram_id=user_data.telegram_id,
-        username=user_data.username,
-        full_name=user_data.full_name,
-    )
-
-    db.add(user)
+    db.add(new_user)
     db.commit()
-    db.refresh(user)
+    db.refresh(new_user)
 
-    return user
+    return new_user
 
 
 @router.get("/", response_model=list[UserResponse])
-def get_users(db: Session = Depends(get_db)):
-    users = db.scalars(select(User).order_by(User.id)).all()
-
-    return users
+def get_users(
+    db: Session = Depends(get_db),
+):
+    return db.query(User).all()
