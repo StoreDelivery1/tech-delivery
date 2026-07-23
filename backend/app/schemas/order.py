@@ -1,33 +1,37 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
-from app.models.order import OrderStatus
+from app.models.order import OrderPriority, OrderStatus
 
 
 class OrderCreate(BaseModel):
-    store_id: int
-    customer_name: str
-    customer_phone: str
-    delivery_address: str
-
-
-class ManagerOrderCreate(BaseModel):
-    customer_name: str
-    customer_phone: str
-    delivery_address: str
+    to_store_id: int
+    description: str
+    estimated_weight: float | None = None
+    priority: OrderPriority = OrderPriority.NORMAL
+    manager_comment: str | None = None
 
 
 class OrderResponse(BaseModel):
     id: int
-    store_id: int
+    number: str
+
+    from_store_id: int
+    to_store_id: int
+
+    created_by: int
     courier_id: int | None
-    customer_name: str
-    customer_phone: str
-    delivery_address: str
+
+    description: str
+    estimated_weight: float | None
+
+    priority: OrderPriority
+    manager_comment: str | None
+
     status: OrderStatus
 
-    model_config = {
-        "from_attributes": True,
-    }
+    model_config = ConfigDict(
+        from_attributes=True,
+    )
 
 
 class OrderStatusUpdate(BaseModel):
