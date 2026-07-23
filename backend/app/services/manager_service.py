@@ -21,6 +21,9 @@ class ManagerService:
         if manager.role != UserRole.MANAGER:
             raise ValueError("User is not a manager")
 
+        if manager.store_id is None:
+            raise ValueError("Manager is not assigned to a store")
+
         return manager
 
     @staticmethod
@@ -36,15 +39,23 @@ class ManagerService:
         )
 
         order = Order(
-            store_id=manager.store_id,
+            number="",
+            from_store_id=manager.store_id,
+            to_store_id=data.to_store_id,
             created_by=manager.id,
-            customer_name=data.customer_name,
-            customer_phone=data.customer_phone,
-            delivery_address=data.delivery_address,
-            status=OrderStatus.CREATED,
+            description=data.description,
+            estimated_weight=data.estimated_weight,
+            priority=data.priority,
+            manager_comment=data.manager_comment,
+            status=OrderStatus.WAITING_FOR_COURIER,
         )
 
         db.add(order)
+        db.commit()
+        db.refresh(order)
+
+        order.number = f"TD-{order.id:06d}"
+
         db.commit()
         db.refresh(order)
 
@@ -63,7 +74,7 @@ class ManagerService:
 
         return (
             db.query(Order)
-            .filter(Order.store_id == manager.store_id)
+            .filter(Order.from_store_id == manager.store_id)
             .order_by(Order.id.desc())
             .all()
         )
@@ -79,34 +90,40 @@ class ManagerService:
             user_id,
         )
 
-        total_orders = (
+        orders = (
             db.query(Order)
-            .filter(Order.store_id == manager.store_id)
-            .count()
-        )
-
-        active_orders = (
-            db.query(Order)
-            .filter(
-                Order.store_id == manager.store_id,
-                Order.status != OrderStatus.DELIVERED,
-            )
-            .count()
-        )
-
-        delivered_orders = (
-            db.query(Order)
-            .filter(
-                Order.store_id == manager.store_id,
-                Order.status == OrderStatus.DELIVERED,
-            )
-            .count()
+            .filter(Order.from_store_id == manager.store_id)
+            .all()
         )
 
         return {
-            "total_orders": total_orders,
-            "active_orders": active_orders,
-            "delivered_orders": delivered_orders,
+            "total_orders": len(orders),
+            "waiting_orders": len(
+                [
+                    o
+                    for o in orders
+                    if o.status == OrderStatus.WAITING_FOR_COURIER
+                ]
+            ),
+            "in_progress_orders": len(
+                [
+                    o
+                    for o in orders
+                    if o.status
+                    in (
+                        OrderStatus.ACCEPTED,
+                        OrderStatus.PICKED_UP,
+                        OrderStatus.DELIVERING,
+                    )
+                ]
+            ),
+            "delivered_orders": len(
+                [
+                    o
+                    for o in orders
+                    if o.status == OrderStatus.DELIVERED
+                ]
+            ),
         }
 
     @staticmethod

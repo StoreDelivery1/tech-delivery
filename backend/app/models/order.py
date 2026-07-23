@@ -32,6 +32,12 @@ class Order(Base):
         index=True,
     )
 
+    number: Mapped[str] = mapped_column(
+        String(20),
+        unique=True,
+        index=True,
+    )
+
     from_store_id: Mapped[int] = mapped_column(
         ForeignKey("stores.id"),
     )
@@ -53,8 +59,9 @@ class Order(Base):
         Text,
     )
 
-    estimated_weight: Mapped[float] = mapped_column(
+    estimated_weight: Mapped[float | None] = mapped_column(
         Float,
+        nullable=True,
     )
 
     priority: Mapped[OrderPriority] = mapped_column(
@@ -66,11 +73,10 @@ class Order(Base):
         default=OrderPriority.NORMAL,
     )
 
-    comment: Mapped[str | None] = mapped_column(
+    manager_comment: Mapped[str | None] = mapped_column(
         Text,
         nullable=True,
     )
-
     status: Mapped[OrderStatus] = mapped_column(
         Enum(
             OrderStatus,

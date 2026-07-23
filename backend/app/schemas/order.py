@@ -11,6 +11,10 @@ class OrderCreate(BaseModel):
     manager_comment: str | None = None
 
 
+class ManagerOrderCreate(OrderCreate):
+    pass
+
+
 class OrderResponse(BaseModel):
     id: int
     number: str
