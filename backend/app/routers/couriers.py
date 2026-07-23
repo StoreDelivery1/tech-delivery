@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.dependencies import get_db
+from app.models.order import OrderStatus
 from app.models.user import User
 from app.schemas.courier import (
     CourierResponse,
@@ -39,6 +40,17 @@ def get_my_profile(
 
 
 @router.get(
+    "/orders/open",
+    response_model=list[OrderResponse],
+)
+def get_open_orders(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return CourierService.get_open_orders(db)
+
+
+@router.get(
     "/me/orders",
     response_model=list[OrderResponse],
 )
@@ -50,6 +62,97 @@ def get_my_orders(
         db=db,
         user_id=current_user.id,
     )
+
+
+@router.patch(
+    "/orders/{order_id}/accept",
+    response_model=OrderResponse,
+)
+def accept_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return CourierService.accept_order(
+            db=db,
+            order_id=order_id,
+            courier_id=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+@router.patch(
+    "/orders/{order_id}/pickup",
+    response_model=OrderResponse,
+)
+def pickup_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return CourierService.change_status(
+            db=db,
+            order_id=order_id,
+            courier_id=current_user.id,
+            new_status=OrderStatus.PICKED_UP,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+@router.patch(
+    "/orders/{order_id}/delivering",
+    response_model=OrderResponse,
+)
+def delivering_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return CourierService.change_status(
+            db=db,
+            order_id=order_id,
+            courier_id=current_user.id,
+            new_status=OrderStatus.DELIVERING,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
+
+
+@router.patch(
+    "/orders/{order_id}/deliver",
+    response_model=OrderResponse,
+)
+def deliver_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        return CourierService.change_status(
+            db=db,
+            order_id=order_id,
+            courier_id=current_user.id,
+            new_status=OrderStatus.DELIVERED,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
 
 @router.get(
