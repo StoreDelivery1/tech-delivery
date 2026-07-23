@@ -42,6 +42,12 @@ class Store(Base):
         back_populates="store",
     )
 
-    orders: Mapped[list["Order"]] = relationship(
-        back_populates="store",
+    outgoing_orders: Mapped[list["Order"]] = relationship(
+        foreign_keys="Order.from_store_id",
+        back_populates="from_store",
+    )
+
+    incoming_orders: Mapped[list["Order"]] = relationship(
+        foreign_keys="Order.to_store_id",
+        back_populates="to_store",
     )

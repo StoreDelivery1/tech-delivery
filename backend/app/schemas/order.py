@@ -10,6 +10,12 @@ class OrderCreate(BaseModel):
     delivery_address: str
 
 
+class ManagerOrderCreate(BaseModel):
+    customer_name: str
+    customer_phone: str
+    delivery_address: str
+
+
 class OrderResponse(BaseModel):
     id: int
     store_id: int
@@ -19,8 +25,9 @@ class OrderResponse(BaseModel):
     delivery_address: str
     status: OrderStatus
 
-    class Config:
-        from_attributes = True
+    model_config = {
+        "from_attributes": True,
+    }
 
 
 class OrderStatusUpdate(BaseModel):

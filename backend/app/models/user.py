@@ -59,11 +59,6 @@ class User(Base):
         default=UserStatus.ACTIVE,
     )
 
-    store_id: Mapped[int | None] = mapped_column(
-        ForeignKey("stores.id"),
-        nullable=True,
-    )
-
     is_online: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -74,11 +69,26 @@ class User(Base):
         nullable=True,
     )
 
-    store: Mapped["Store"] = relationship(
+    # Для менеджерів — магазин, у якому вони зараз працюють.
+    # Для кур'єрів та адміністратора може бути NULL.
+    store_id: Mapped[int | None] = mapped_column(
+        ForeignKey("stores.id"),
+        nullable=True,
+    )
+
+    store = relationship(
+        "Store",
         back_populates="managers",
     )
 
-    orders: Mapped[list["Order"]] = relationship(
-        back_populates="courier",
+    created_orders = relationship(
+        "Order",
+        foreign_keys="Order.created_by",
+        back_populates="creator",
+    )
+
+    courier_orders = relationship(
+        "Order",
         foreign_keys="Order.courier_id",
+        back_populates="courier",
     )
