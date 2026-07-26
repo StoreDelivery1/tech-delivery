@@ -3,6 +3,10 @@ from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
+from app.bot.keyboards.main_menu import (
+    courier_main_menu,
+    manager_main_menu,
+)
 from app.bot.states.activation import ActivationState
 from app.database.session import SessionLocal
 from app.models.user import UserRole
@@ -37,23 +41,25 @@ async def start_handler(
 
                 await message.answer(
                     f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
-                    "Ви увійшли як <b>Менеджер</b>.\n\n"
-                    "Незабаром тут з'явиться головне меню менеджера."
+                    "Ви увійшли як <b>Менеджер</b>.",
+                    reply_markup=manager_main_menu(),
                 )
 
-            elif user.role == UserRole.COURIER:
+                return
+
+            if user.role == UserRole.COURIER:
 
                 await message.answer(
                     f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
-                    "Ви увійшли як <b>Кур'єр</b>.\n\n"
-                    "Незабаром тут з'явиться головне меню кур'єра."
+                    "Ви увійшли як <b>Кур'єр</b>.",
+                    reply_markup=courier_main_menu(),
                 )
 
-            else:
+                return
 
-                await message.answer(
-                    f"👋 Вітаємо, <b>{user.full_name}</b>!"
-                )
+            await message.answer(
+                f"👋 Вітаємо, <b>{user.full_name}</b>!"
+            )
 
             return
 
