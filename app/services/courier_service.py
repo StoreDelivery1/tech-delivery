@@ -53,7 +53,16 @@ class CourierService:
 
         return (
             db.query(Order)
-            .filter(Order.courier_id == user_id)
+            .filter(
+                Order.courier_id == user_id,
+                Order.status.in_(
+                    [
+                        OrderStatus.ACCEPTED,
+                        OrderStatus.PICKED_UP,
+                        OrderStatus.DELIVERING,
+                    ]
+                ),
+            )
             .order_by(Order.id.desc())
             .all()
         )

@@ -28,7 +28,7 @@ def picked_up_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📍 Забрав",
+                    text="� Забрав товар",
                     callback_data=f"pickup:{order_id}",
                 )
             ]
@@ -60,7 +60,7 @@ def delivered_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Доставив",
+                    text="✅ Доставлено",
                     callback_data=f"delivered:{order_id}",
                 )
             ]
