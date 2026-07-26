@@ -1,10 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.models.user import User, UserStatus
+from app.models.user import UserStatus
 from app.schemas.auth import TokenResponse
 from app.services.user_service import UserService
 
@@ -34,7 +34,7 @@ class AuthService:
                 detail="User is inactive",
             )
 
-        user.last_login_at = datetime.utcnow()
+        user.last_login_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(user)
@@ -50,9 +50,3 @@ class AuthService:
             access_token=token,
             token_type="bearer",
         )
-
-    @staticmethod
-    def me(
-        user: User,
-    ) -> User:
-        return user

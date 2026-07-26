@@ -5,6 +5,7 @@ from aiogram.types import Message
 
 from app.bot.states.activation import ActivationState
 from app.database.session import SessionLocal
+from app.models.user import UserRole
 from app.services.activation_service import ActivationService
 
 router = Router()
@@ -24,14 +25,35 @@ async def start_handler(
         )
 
         if user is not None:
+
             ActivationService.update_last_login(
                 db,
                 user,
             )
 
-            await message.answer(
-                f"👋 Вітаємо назад, <b>{user.full_name}</b>!"
-            )
+            await state.clear()
+
+            if user.role == UserRole.MANAGER:
+
+                await message.answer(
+                    f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
+                    "Ви увійшли як <b>Менеджер</b>.\n\n"
+                    "Незабаром тут з'явиться головне меню менеджера."
+                )
+
+            elif user.role == UserRole.COURIER:
+
+                await message.answer(
+                    f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
+                    "Ви увійшли як <b>Кур'єр</b>.\n\n"
+                    "Незабаром тут з'явиться головне меню кур'єра."
+                )
+
+            else:
+
+                await message.answer(
+                    f"👋 Вітаємо, <b>{user.full_name}</b>!"
+                )
 
             return
 
@@ -40,8 +62,8 @@ async def start_handler(
         )
 
         await message.answer(
-            "👋 <b>Вітаємо у Tech Delivery!</b>\n\n"
-            "🔑 Введіть код активації."
+            "👋 <b>Ласкаво просимо до Tech Delivery!</b>\n\n"
+            "Для початку роботи введіть код активації, який вам видав адміністратор."
         )
 
     finally:

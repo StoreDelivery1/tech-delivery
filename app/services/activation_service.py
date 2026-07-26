@@ -11,9 +11,13 @@ class ActivationService:
 
     CODE_PREFIX = "TD"
     CODE_LENGTH = 4
+    CODE_EXPIRE_HOURS = 24
 
     @staticmethod
-    def generate_code(db: Session) -> str:
+    def generate_code(
+        db: Session,
+    ) -> str:
+
         while True:
             suffix = "".join(
                 random.choices(
@@ -43,7 +47,7 @@ class ActivationService:
 
         user.activation_code_expires_at = (
             datetime.now(timezone.utc)
-            + timedelta(hours=24)
+            + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
         )
 
         db.commit()
@@ -83,6 +87,23 @@ class ActivationService:
         username: str | None,
     ) -> User:
 
+        if (
+            user.activation_code_expires_at
+            and user.activation_code_expires_at
+            < datetime.now(timezone.utc)
+        ):
+            raise ValueError("Activation code expired")
+
+        existing = ActivationService.get_by_telegram(
+            db,
+            telegram_id,
+        )
+
+        if existing and existing.id != user.id:
+            raise ValueError(
+                "Telegram account already linked"
+            )
+
         user.telegram_id = telegram_id
         user.username = username
 
@@ -117,10 +138,13 @@ class ActivationService:
         user.username = None
         user.activated_at = None
 
-        user.activation_code = ActivationService.generate_code(db)
+        user.activation_code = (
+            ActivationService.generate_code(db)
+        )
+
         user.activation_code_expires_at = (
             datetime.now(timezone.utc)
-            + timedelta(hours=24)
+            + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
         )
 
         db.commit()

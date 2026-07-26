@@ -1,9 +1,12 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.security import get_current_user
 from app.dependencies import get_db
+from app.models.user import User
 from app.schemas.auth import TokenResponse
 from app.schemas.user import UserResponse
 from app.services.auth_service import AuthService
@@ -22,7 +25,6 @@ def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
-
     try:
         telegram_id = int(form_data.username)
     except ValueError:
@@ -32,8 +34,8 @@ def login(
         )
 
     return AuthService.login(
-        db,
-        telegram_id,
+        db=db,
+        telegram_id=telegram_id,
     )
 
 
@@ -42,6 +44,9 @@ def login(
     response_model=UserResponse,
 )
 def me(
-    current_user=Depends(get_current_user),
+    current_user: Annotated[
+        User,
+        Depends(get_current_user),
+    ],
 ):
-    return AuthService.me(current_user)
+    return current_user

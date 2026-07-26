@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.order import Order, OrderStatus
 from app.models.user import User, UserRole
 from app.schemas.order import ManagerOrderCreate
+from app.services.order_service import OrderService
 
 
 class ManagerService:
@@ -38,28 +39,11 @@ class ManagerService:
             user_id,
         )
 
-        order = Order(
-            number="",
-            from_store_id=manager.store_id,
-            to_store_id=data.to_store_id,
-            created_by=manager.id,
-            description=data.description,
-            estimated_weight=data.estimated_weight,
-            priority=data.priority,
-            manager_comment=data.manager_comment,
-            status=OrderStatus.WAITING_FOR_COURIER,
+        return OrderService.create_order(
+            db=db,
+            order=data,
+            current_user=manager,
         )
-
-        db.add(order)
-        db.commit()
-        db.refresh(order)
-
-        order.number = f"TD-{order.id:06d}"
-
-        db.commit()
-        db.refresh(order)
-
-        return order
 
     @staticmethod
     def get_orders(
@@ -74,7 +58,9 @@ class ManagerService:
 
         return (
             db.query(Order)
-            .filter(Order.from_store_id == manager.store_id)
+            .filter(
+                Order.from_store_id == manager.store_id,
+            )
             .order_by(Order.id.desc())
             .all()
         )
@@ -92,37 +78,30 @@ class ManagerService:
 
         orders = (
             db.query(Order)
-            .filter(Order.from_store_id == manager.store_id)
+            .filter(
+                Order.from_store_id == manager.store_id,
+            )
             .all()
         )
 
         return {
             "total_orders": len(orders),
-            "waiting_orders": len(
-                [
-                    o
-                    for o in orders
-                    if o.status == OrderStatus.WAITING_FOR_COURIER
-                ]
+            "waiting_orders": sum(
+                o.status == OrderStatus.WAITING_FOR_COURIER
+                for o in orders
             ),
-            "in_progress_orders": len(
-                [
-                    o
-                    for o in orders
-                    if o.status
-                    in (
-                        OrderStatus.ACCEPTED,
-                        OrderStatus.PICKED_UP,
-                        OrderStatus.DELIVERING,
-                    )
-                ]
+            "in_progress_orders": sum(
+                o.status
+                in (
+                    OrderStatus.ACCEPTED,
+                    OrderStatus.PICKED_UP,
+                    OrderStatus.DELIVERING,
+                )
+                for o in orders
             ),
-            "delivered_orders": len(
-                [
-                    o
-                    for o in orders
-                    if o.status == OrderStatus.DELIVERED
-                ]
+            "delivered_orders": sum(
+                o.status == OrderStatus.DELIVERED
+                for o in orders
             ),
         }
 

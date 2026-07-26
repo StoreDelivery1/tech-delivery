@@ -1,12 +1,43 @@
-from datetime import datetime
-
 from sqlalchemy.orm import Session
 
 from app.models.order import Order, OrderStatus
 from app.models.user import User
+from app.schemas.order import OrderCreate
+from app.services.order_number_service import OrderNumberService
+from app.services.order_status_service import OrderStatusService
 
 
 class OrderService:
+
+    @staticmethod
+    def create_order(
+        db: Session,
+        order: OrderCreate,
+        current_user: User,
+    ) -> Order:
+
+        if current_user.store_id is None:
+            raise ValueError(
+                "Manager has no assigned store."
+            )
+
+        new_order = Order(
+            number=OrderNumberService.generate(db),
+            from_store_id=current_user.store_id,
+            to_store_id=order.to_store_id,
+            created_by=current_user.id,
+            description=order.description,
+            estimated_weight=order.estimated_weight,
+            priority=order.priority,
+            manager_comment=order.manager_comment,
+            status=OrderStatus.WAITING_FOR_COURIER,
+        )
+
+        db.add(new_order)
+        db.commit()
+        db.refresh(new_order)
+
+        return new_order
 
     @staticmethod
     def get_orders(
@@ -28,104 +59,79 @@ class OrderService:
         order = db.get(Order, order_id)
 
         if order is None:
-            raise ValueError("Order not found")
+            raise ValueError(
+                "Order not found."
+            )
 
         return order
 
     @staticmethod
-    def accept_order(
+    def assign_courier(
         db: Session,
-        order: Order,
-        courier: User,
+        order_id: int,
+        courier_id: int,
     ) -> Order:
 
-        if order.status != OrderStatus.WAITING_FOR_COURIER:
+        order = OrderService.get_order(
+            db,
+            order_id,
+        )
+
+        courier = db.get(
+            User,
+            courier_id,
+        )
+
+        if courier is None:
             raise ValueError(
-                "Order cannot be accepted"
+                "Courier not found."
             )
 
-        order.status = OrderStatus.ACCEPTED
-        order.courier_id = courier.id
-        order.accepted_at = datetime.utcnow()
-
-        db.commit()
-        db.refresh(order)
-
-        return order
+        return OrderStatusService.accept(
+            db=db,
+            order=order,
+            courier=courier,
+        )
 
     @staticmethod
-    def pickup_order(
+    def update_status(
         db: Session,
-        order: Order,
+        order_id: int,
+        new_status: OrderStatus,
     ) -> Order:
 
-        if order.status != OrderStatus.ACCEPTED:
-            raise ValueError(
-                "Order cannot be picked up"
+        order = OrderService.get_order(
+            db,
+            order_id,
+        )
+
+        if new_status == OrderStatus.PICKED_UP:
+            return OrderStatusService.pickup(
+                db,
+                order,
             )
 
-        order.status = OrderStatus.PICKED_UP
-        order.picked_up_at = datetime.utcnow()
-
-        db.commit()
-        db.refresh(order)
-
-        return order
-
-    @staticmethod
-    def start_delivery(
-        db: Session,
-        order: Order,
-    ) -> Order:
-
-        if order.status != OrderStatus.PICKED_UP:
-            raise ValueError(
-                "Order cannot be started"
+        if new_status == OrderStatus.DELIVERING:
+            return OrderStatusService.start_delivery(
+                db,
+                order,
             )
 
-        order.status = OrderStatus.DELIVERING
-
-        db.commit()
-        db.refresh(order)
-
-        return order
-
-    @staticmethod
-    def deliver_order(
-        db: Session,
-        order: Order,
-    ) -> Order:
-
-        if order.status != OrderStatus.DELIVERING:
-            raise ValueError(
-                "Order cannot be delivered"
+        if new_status == OrderStatus.DELIVERED:
+            return OrderStatusService.deliver(
+                db,
+                order,
             )
 
-        order.status = OrderStatus.DELIVERED
-        order.delivered_at = datetime.utcnow()
-
-        db.commit()
-        db.refresh(order)
-
-        return order
-
-    @staticmethod
-    def cancel_order(
-        db: Session,
-        order: Order,
-    ) -> Order:
-
-        if order.status == OrderStatus.DELIVERED:
-            raise ValueError(
-                "Delivered order cannot be canceled"
+        if new_status == OrderStatus.CANCELED:
+            return OrderStatusService.cancel(
+                db,
+                order,
             )
 
-        order.status = OrderStatus.CANCELED
-
-        db.commit()
-        db.refresh(order)
-
-        return order
+        raise ValueError(
+            "Invalid status."
+        )
 
     @staticmethod
     def delete_order(

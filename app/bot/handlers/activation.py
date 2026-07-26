@@ -24,13 +24,14 @@ async def activation_handler(
         code = message.text.strip().upper()
 
         user = ActivationService.get_by_code(
-            db,
-            code,
+            db=db,
+            code=code,
         )
 
         if user is None:
             await message.answer(
-                "❌ Код не знайдено."
+                "❌ Код активації не знайдено.\n\n"
+                "Перевірте код та спробуйте ще раз."
             )
             return
 
@@ -40,22 +41,31 @@ async def activation_handler(
             < datetime.now(timezone.utc)
         ):
             await message.answer(
-                "⌛ Код прострочений."
+                "⌛ Термін дії коду закінчився.\n"
+                "Зверніться до адміністратора для отримання нового коду."
             )
             return
 
-        ActivationService.activate(
-            db=db,
-            user=user,
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-        )
+        try:
+            ActivationService.activate(
+                db=db,
+                user=user,
+                telegram_id=message.from_user.id,
+                username=message.from_user.username,
+            )
+        except ValueError as e:
+            await message.answer(
+                f"❌ {str(e)}"
+            )
+            return
 
         await state.clear()
 
         await message.answer(
-            f"✅ Акаунт активовано!\n\n"
-            f"Вітаємо, <b>{user.full_name}</b> 🎉"
+            "✅ Акаунт успішно активовано!\n\n"
+            f"👤 {user.full_name}\n"
+            f"🎭 Роль: {user.role.value}\n\n"
+            "Тепер ви можете користуватися ботом."
         )
 
     finally:

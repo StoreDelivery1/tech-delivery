@@ -20,8 +20,8 @@ class UserService:
         db.refresh(new_user)
 
         ActivationService.assign_activation_code(
-            db,
-            new_user,
+            db=db,
+            user=new_user,
         )
 
         return new_user
@@ -64,9 +64,11 @@ class UserService:
         data: UserUpdate,
     ) -> User:
 
-        for key, value in data.model_dump(
+        update_data = data.model_dump(
             exclude_unset=True,
-        ).items():
+        )
+
+        for key, value in update_data.items():
             setattr(user, key, value)
 
         db.commit()
