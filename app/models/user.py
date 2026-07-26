@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -28,6 +28,7 @@ class User(Base):
     )
 
     telegram_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         unique=True,
         index=True,
         nullable=True,

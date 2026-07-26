@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
 from app.bot.keyboards.main_menu import (
+    admin_main_menu,
     courier_main_menu,
     manager_main_menu,
 )
@@ -20,6 +21,10 @@ async def start_handler(
     message: Message,
     state: FSMContext,
 ):
+    print(f"ROUTER: start | {message.text}")
+    print(f"Telegram ID: {message.from_user.id}")
+    print(f"Username: {message.from_user.username}")
+
     db = SessionLocal()
 
     try:
@@ -36,6 +41,16 @@ async def start_handler(
             )
 
             await state.clear()
+
+            if user.role == UserRole.ADMIN:
+
+                await message.answer(
+                    f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
+                    "Ви увійшли як <b>Адміністратор</b>.",
+                    reply_markup=admin_main_menu(),
+                )
+
+                return
 
             if user.role == UserRole.MANAGER:
 

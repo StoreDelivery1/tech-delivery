@@ -4,6 +4,57 @@ from aiogram.types import (
 )
 
 
+def admin_main_menu() -> ReplyKeyboardMarkup:
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="👥 Користувачі",
+                ),
+                KeyboardButton(
+                    text="📦 Замовлення",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text="🚚 Кур'єри",
+                ),
+                KeyboardButton(
+                    text="📊 Статистика",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text="👤 Профіль",
+                ),
+            ],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Оберіть дію...",
+    )
+
+
+def admin_couriers_menu() -> ReplyKeyboardMarkup:
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text="➕ Додати кур'єра",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text="⬅️ Назад",
+                ),
+            ],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Оберіть дію...",
+    )
+
+
 def courier_main_menu() -> ReplyKeyboardMarkup:
 
     return ReplyKeyboardMarkup(
@@ -43,7 +94,7 @@ def manager_main_menu() -> ReplyKeyboardMarkup:
         keyboard=[
             [
                 KeyboardButton(
-                    text="➕ Створити замовлення",
+                    text="📦 Створити заявку",
                 ),
             ],
             [
