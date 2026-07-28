@@ -18,13 +18,8 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(
-                    text="🚚 Кур'єри",
-                ),
-                KeyboardButton(
                     text="📊 Статистика",
                 ),
-            ],
-            [
                 KeyboardButton(
                     text="👤 Профіль",
                 ),
@@ -35,11 +30,14 @@ def admin_main_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def admin_couriers_menu() -> ReplyKeyboardMarkup:
+def admin_staff_menu() -> ReplyKeyboardMarkup:
 
     return ReplyKeyboardMarkup(
         keyboard=[
             [
+                KeyboardButton(
+                    text="➕ Додати менеджера",
+                ),
                 KeyboardButton(
                     text="➕ Додати кур'єра",
                 ),
@@ -55,10 +53,53 @@ def admin_couriers_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def courier_main_menu() -> ReplyKeyboardMarkup:
+def admin_users_menu() -> ReplyKeyboardMarkup:
 
     return ReplyKeyboardMarkup(
         keyboard=[
+            [
+                KeyboardButton(
+                    text="➕ Створити менеджера",
+                ),
+                KeyboardButton(
+                    text="➕ Створити кур'єра",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text="👨‍💼 Менеджери",
+                ),
+                KeyboardButton(
+                    text="🚴 Кур'єри",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text="⬅️ Назад",
+                ),
+            ],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Оберіть дію...",
+    )
+
+
+def courier_main_menu(courier=None) -> ReplyKeyboardMarkup:
+    from app.models.user import CourierAvailability
+
+    # Determine shift button based on courier availability
+    shift_button_text = "🟢 Почати зміну"
+    if courier and hasattr(courier, "availability"):
+        if courier.availability in (CourierAvailability.AVAILABLE, CourierAvailability.BUSY):
+            shift_button_text = "🔴 Завершити зміну"
+
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(
+                    text=shift_button_text,
+                ),
+            ],
             [
                 KeyboardButton(
                     text="📦 Вільні замовлення",
@@ -77,18 +118,13 @@ def courier_main_menu() -> ReplyKeyboardMarkup:
                     text="📊 Статистика",
                 ),
             ],
-            [
-                KeyboardButton(
-                    text="🟢 Я онлайн",
-                ),
-            ],
         ],
         resize_keyboard=True,
         input_field_placeholder="Оберіть дію...",
     )
 
 
-def manager_main_menu() -> ReplyKeyboardMarkup:
+def manager_main_menu(active_count: int = 0, all_count: int = 0, incoming_count: int = 0) -> ReplyKeyboardMarkup:
 
     return ReplyKeyboardMarkup(
         keyboard=[
@@ -99,7 +135,17 @@ def manager_main_menu() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(
-                    text="📋 Мої замовлення",
+                    text=f"🟡 Активні замовлення ({active_count})",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text=f"📋 Всі замовлення ({all_count})",
+                ),
+            ],
+            [
+                KeyboardButton(
+                    text=f"📥 До нас їдуть ({incoming_count})",
                 ),
             ],
             [

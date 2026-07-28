@@ -1,9 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
 from app.models.order import Order, OrderStatus
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, CourierAvailability
 from app.services.order_service import OrderService
 from app.services.order_status_service import OrderStatusService
 
@@ -84,11 +84,101 @@ class CourierService:
             order_id,
         )
 
-        return OrderStatusService.accept(
+        order = OrderStatusService.accept(
             db=db,
             order=order,
             courier=courier,
         )
+
+        # Auto-transition: AVAILABLE → BUSY
+        if courier.availability == CourierAvailability.AVAILABLE:
+            CourierService.set_busy(db, courier_id)
+
+        return order
+
+    @staticmethod
+    def start_shift(db: Session, courier_id: int) -> User:
+        """Start shift: OFFLINE → AVAILABLE."""
+        courier = CourierService.get_profile(db, courier_id)
+
+        if courier.availability == CourierAvailability.AVAILABLE:
+            raise ValueError("Зміна вже розпочата")
+
+        courier.availability = CourierAvailability.AVAILABLE
+        db.commit()
+        db.refresh(courier)
+        return courier
+
+    @staticmethod
+    def end_shift(db: Session, courier_id: int) -> User:
+        """End shift: AVAILABLE → OFFLINE. Fails if courier has active orders."""
+        courier = CourierService.get_profile(db, courier_id)
+
+        if courier.availability == CourierAvailability.OFFLINE:
+            raise ValueError("Зміна вже завершена")
+
+        # Check for active orders
+        active_orders = (
+            db.query(Order)
+            .filter(
+                Order.courier_id == courier_id,
+                Order.status.in_([
+                    OrderStatus.ACCEPTED,
+                    OrderStatus.PICKED_UP,
+                    OrderStatus.DELIVERING,
+                ]),
+            )
+            .count()
+        )
+
+        if active_orders > 0:
+            raise ValueError(
+                "Неможливо завершити зміну. Спочатку завершіть активну доставку."
+            )
+
+        courier.availability = CourierAvailability.OFFLINE
+        db.commit()
+        db.refresh(courier)
+        return courier
+
+    @staticmethod
+    def set_busy(db: Session, courier_id: int) -> User:
+        """Set courier to BUSY (internal use only)."""
+        courier = db.get(User, courier_id)
+        if courier is None:
+            raise ValueError("Courier not found")
+        courier.availability = CourierAvailability.BUSY
+        db.commit()
+        db.refresh(courier)
+        return courier
+
+    @staticmethod
+    def set_available(db: Session, courier_id: int) -> User:
+        """Set courier to AVAILABLE. Called after order delivery if shift is ongoing."""
+        courier = db.get(User, courier_id)
+        if courier is None:
+            raise ValueError("Courier not found")
+
+        # Only set AVAILABLE if courier is currently BUSY and has no other active orders
+        if courier.availability == CourierAvailability.BUSY:
+            active_orders = (
+                db.query(Order)
+                .filter(
+                    Order.courier_id == courier_id,
+                    Order.status.in_([
+                        OrderStatus.ACCEPTED,
+                        OrderStatus.PICKED_UP,
+                        OrderStatus.DELIVERING,
+                    ]),
+                )
+                .count()
+            )
+            if active_orders == 0:
+                courier.availability = CourierAvailability.AVAILABLE
+                db.commit()
+
+        db.refresh(courier)
+        return courier
 
     @staticmethod
     def change_status(
@@ -126,10 +216,13 @@ class CourierService:
             )
 
         if new_status == OrderStatus.DELIVERED:
-            return OrderStatusService.deliver(
+            order = OrderStatusService.deliver(
                 db,
                 order,
             )
+            # Auto-transition: BUSY → AVAILABLE (if no other active orders)
+            CourierService.set_available(db, courier_id)
+            return order
 
         raise ValueError("Invalid status.")
 
@@ -188,7 +281,7 @@ class CourierService:
         )
 
         user.is_online = is_online
-        user.last_seen = datetime.now(timezone.utc)
+        user.last_seen = datetime.now()
 
         db.commit()
         db.refresh(user)

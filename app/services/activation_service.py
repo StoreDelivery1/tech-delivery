@@ -1,10 +1,10 @@
 import random
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 class ActivationService:
@@ -46,7 +46,7 @@ class ActivationService:
         user.activation_code = ActivationService.generate_code(db)
 
         user.activation_code_expires_at = (
-            datetime.now(timezone.utc)
+            datetime.now()
             + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
         )
 
@@ -80,6 +80,51 @@ class ActivationService:
         )
 
     @staticmethod
+    def get_admin(
+        db: Session,
+        telegram_id: int,
+    ) -> User | None:
+        """Get admin user by telegram_id with role verification."""
+        return (
+            db.query(User)
+            .filter(
+                User.telegram_id == telegram_id,
+                User.role == UserRole.ADMIN,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_manager(
+        db: Session,
+        telegram_id: int,
+    ) -> User | None:
+        """Get manager user by telegram_id with role verification."""
+        return (
+            db.query(User)
+            .filter(
+                User.telegram_id == telegram_id,
+                User.role == UserRole.MANAGER,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_courier(
+        db: Session,
+        telegram_id: int,
+    ) -> User | None:
+        """Get courier user by telegram_id with role verification."""
+        return (
+            db.query(User)
+            .filter(
+                User.telegram_id == telegram_id,
+                User.role == UserRole.COURIER,
+            )
+            .first()
+        )
+
+    @staticmethod
     def activate(
         db: Session,
         user: User,
@@ -90,7 +135,7 @@ class ActivationService:
         if (
             user.activation_code_expires_at
             and user.activation_code_expires_at
-            < datetime.now(timezone.utc)
+            < datetime.now()
         ):
             raise ValueError("Activation code expired")
 
@@ -107,8 +152,8 @@ class ActivationService:
         user.telegram_id = telegram_id
         user.username = username
 
-        user.activated_at = datetime.now(timezone.utc)
-        user.last_login_at = datetime.now(timezone.utc)
+        user.activated_at = datetime.now()
+        user.last_login_at = datetime.now()
 
         user.activation_code = None
         user.activation_code_expires_at = None
@@ -124,7 +169,7 @@ class ActivationService:
         user: User,
     ) -> None:
 
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now()
 
         db.commit()
 
@@ -143,7 +188,7 @@ class ActivationService:
         )
 
         user.activation_code_expires_at = (
-            datetime.now(timezone.utc)
+            datetime.now()
             + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
         )
 

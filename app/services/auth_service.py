@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -34,7 +34,7 @@ class AuthService:
                 detail="User is inactive",
             )
 
-        user.last_login_at = datetime.now(timezone.utc)
+        user.last_login_at = datetime.now()
 
         db.commit()
         db.refresh(user)

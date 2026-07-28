@@ -1,0 +1,171 @@
+"""
+Routing Audit - Trace dispatcher behavior for Update with message "📊 Статистика"
+"""
+
+print("=" * 80)
+print("ROUTING AUDIT: Update handling for '📊 Статистика'")
+print("=" * 80)
+
+print("\n1. HANDLERS MATCHING F.text == '📊 Статистика'")
+print("-" * 80)
+
+handlers = [
+    {
+        "file": "admin.py",
+        "line": 392,
+        "function": "admin_statistics_handler",
+        "action": "Displays statistics menu",
+        "role_check": "No role check - shows menu for any user",
+    },
+    {
+        "file": "manager.py",
+        "line": 897,
+        "function": "statistics_handler",
+        "action": "Displays manager statistics",
+        "role_check": "Checks: ActivationService.get_manager()",
+    },
+    {
+        "file": "courier.py",
+        "line": 450,
+        "function": "courier_statistics_handler",
+        "action": "Displays courier statistics",
+        "role_check": "Checks: ActivationService.get_courier()",
+    },
+]
+
+for i, h in enumerate(handlers, 1):
+    print(f"\n{i}. Handler in {h['file']} (line {h['line']})")
+    print(f"   Function: {h['function']}")
+    print(f"   Pattern: @router.message(F.text == '📊 Статистика')")
+    print(f"   Action: {h['action']}")
+    print(f"   Role Check: {h['role_check']}")
+
+print("\n2. DISPATCHER ROUTING ORDER")
+print("-" * 80)
+
+routers = [
+    ("1. start_router", "app.bot.handlers.start"),
+    ("2. activation_router", "app.bot.handlers.activation"),
+    ("3. manager_router", "app.bot.handlers.manager ← FIRST TO CHECK"),
+    ("4. courier_router", "app.bot.handlers.courier ← SECOND TO CHECK"),
+    ("5. admin_router", "app.bot.handlers.admin ← THIRD TO CHECK"),
+]
+
+for router, path in routers:
+    print(f"{router}")
+    print(f"   Module: {path}")
+
+print("\n3. DISPATCHER CONFIGURATION (from dispatcher.py)")
+print("-" * 80)
+
+config = """
+dp = Dispatcher()
+
+dp.include_router(start_router)
+dp.include_router(activation_router)
+
+# Manager (before admin to ensure manager callbacks are handled first)
+dp.include_router(manager_router)
+
+# Courier
+dp.include_router(courier_router)
+
+# Admin (after all user-specific routers)
+dp.include_router(admin_router)
+"""
+
+print(config)
+
+print("\n4. EXECUTION TRACE: When courier presses '📊 Статистика'")
+print("-" * 80)
+
+trace = """
+Step 1: Update arrives at dispatcher
+  - message.text = "📊 Статистика"
+  - message.from_user.id = courier_telegram_id (e.g., 8345605125)
+
+Step 2: Dispatcher checks each router in order
+  
+  Router 1 (start_router):
+    - No handler matches "📊 Статистика"
+    - Continue to next router
+
+  Router 2 (activation_router):
+    - No handler matches "📊 Статистика"
+    - Continue to next router
+
+  Router 3 (manager_router): ← MATCH FOUND HERE
+    - Found handler: statistics_handler @ line 897
+    - Pattern: F.text == "📊 Статистика"
+    - TEXT MATCH: "📊 Статистика" == "📊 Статистика" ✓ TRUE
+    
+    Step 3: Execute manager's statistics_handler
+      - db = SessionLocal()
+      - Calls: manager = ActivationService.get_manager(db, 8345605125)
+      - Result: get_manager() returns None (user is courier, not manager)
+      - Condition: if manager is None → TRUE
+      - Action: await message.answer("❌ Користувача не знайдено")
+      - Returns from handler
+    
+    Step 4: Message marked as HANDLED
+      - Handler consumed the message
+      - Dispatcher stops processing
+    
+  Router 4 (courier_router): ← NEVER REACHED
+    - Dispatcher already marked message as handled
+    - Handler courier_statistics_handler is NOT executed
+    - NO TRACE logs appear in console
+
+  Router 5 (admin_router): ← NEVER REACHED
+    - Message already handled
+    - Handler is NOT executed
+"""
+
+print(trace)
+
+print("\n5. ROOT CAUSE")
+print("-" * 80)
+
+cause = """
+ROUTING CONFLICT: Three handlers handle the same message text "📊 Статистика"
+
+  1. admin.py:statistics_handler (line 392)
+  2. manager.py:statistics_handler (line 897) ← EXECUTED FIRST
+  3. courier.py:courier_statistics_handler (line 450) ← NEVER REACHED
+
+Since manager_router is included BEFORE courier_router in the dispatcher,
+the manager_router's handler processes ALL "📊 Статистика" messages first,
+consuming them before courier_router's handler has a chance to execute.
+
+WHAT HAPPENS:
+  - Courier presses "📊 Статистика"
+  - manager.py:statistics_handler executes (NOT courier.py:courier_statistics_handler)
+  - manager's handler calls ActivationService.get_manager()
+  - Courier returns None (not a manager)
+  - Error message "❌ Користувача не знайдено" is sent
+  - Message is marked as handled
+  - Dispatcher stops
+  - courier_statistics_handler is NEVER executed
+  - NO TRACE logs appear
+
+WHY NO TRACE LOGS:
+  - courier_statistics_handler contains all the TRACE logging
+  - But courier_statistics_handler is never called
+  - So no TRACE logs appear
+  - The error message comes from manager.py:statistics_handler (which has no TRACE logging)
+"""
+
+print(cause)
+
+print("\n6. HANDLER THAT ACTUALLY HANDLED UPDATE id=516240798")
+print("-" * 80)
+
+print("ANSWER: app.bot.handlers.manager.statistics_handler @ line 897")
+print("\nProof:")
+print("  1. Message text: '📊 Статистика' matches all three handlers")
+print("  2. Dispatcher routing order: manager_router is BEFORE courier_router")
+print("  3. First match wins: manager_router's handler executes")
+print("  4. Result: Error message sent (user is courier, not manager)")
+print("  5. No TRACE logs: courier_statistics_handler never executes")
+
+print("\n" + "=" * 80)

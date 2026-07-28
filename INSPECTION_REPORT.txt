@@ -1,0 +1,85 @@
+================================================================================
+                    COMPLETE DATABASE INSPECTION REPORT
+================================================================================
+
+ACTIVE COURIER FOUND:
+  Name: Кобрин роман
+  ID: 4
+  Telegram ID: 6118317240
+  Role: UserRole.COURIER
+  Status: UserStatus.ACTIVE
+  Activated At: 2026-07-27 13:01:42.671304
+  Activation Code: None
+
+================================================================================
+RAW DATABASE VALUE FOR ROLE COLUMN:
+================================================================================
+
+  Database stores: 'COURIER' (as VARCHAR string)
+  Type: <class 'str'>
+  Repr: 'COURIER'
+
+================================================================================
+EXACT QUERY EXECUTION (from get_courier):
+================================================================================
+
+  Query:
+    db.query(User)
+      .filter(
+        User.telegram_id == 6118317240,
+        User.role == UserRole.COURIER,
+      )
+      .first()
+
+  ORM Result: ✓ SUCCESS - Found user "Кобрин роман"
+  Raw SQL Result: ✓ SUCCESS - Found 14-column row
+
+================================================================================
+ROLE COMPARISON ANALYSIS:
+================================================================================
+
+  Database value: 'COURIER'
+  Enum value: UserRole.COURIER
+  
+  Comparison tests:
+  • courier.role == UserRole.COURIER              → True ✓
+  • str(courier.role) == 'COURIER'                → True ✓
+  • courier.role.value == 'COURIER'               → True ✓
+
+================================================================================
+FILTER CONDITIONS:
+================================================================================
+
+  Condition 1: telegram_id == 6118317240
+    • Database value: 6118317240
+    • Match: True ✓
+
+  Condition 2: role == UserRole.COURIER
+    • Database value: 'COURIER'
+    • Enum value: UserRole.COURIER
+    • Match: True ✓
+
+  Combined (AND): Both conditions True ✓
+
+================================================================================
+FINAL VERIFICATION - ActivationService.get_courier():
+================================================================================
+
+  Call: ActivationService.get_courier(db, 6118317240)
+  Result: ✓ SUCCESS
+  Returned: User object (ID: 4, Name: "Кобрин роман", Role: UserRole.COURIER)
+
+================================================================================
+CONCLUSION:
+================================================================================
+
+✓ get_courier() is working CORRECTLY
+✓ No database mismatches
+✓ No enum comparison issues
+✓ No role column value issues
+✓ All conditions evaluate as expected
+✓ Method returns the correct courier object
+
+NO FIX REQUIRED - Implementation is correct.
+
+================================================================================

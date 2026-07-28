@@ -27,7 +27,7 @@ class OrderService:
             to_store_id=order.to_store_id,
             created_by=current_user.id,
             description=order.description,
-            estimated_weight=order.estimated_weight,
+            size=order.size,
             priority=order.priority,
             manager_comment=order.manager_comment,
             status=OrderStatus.WAITING_FOR_COURIER,

@@ -18,6 +18,12 @@ class UserStatus(str, enum.Enum):
     INACTIVE = "INACTIVE"
 
 
+class CourierAvailability(str, enum.Enum):
+    OFFLINE = "OFFLINE"
+    AVAILABLE = "AVAILABLE"
+    BUSY = "BUSY"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -90,6 +96,15 @@ class User(Base):
     last_seen: Mapped[datetime | None] = mapped_column(
         DateTime,
         nullable=True,
+    )
+
+    availability: Mapped[CourierAvailability] = mapped_column(
+        Enum(
+            CourierAvailability,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=CourierAvailability.OFFLINE,
     )
 
     store_id: Mapped[int | None] = mapped_column(

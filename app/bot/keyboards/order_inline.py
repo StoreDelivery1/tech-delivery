@@ -60,7 +60,7 @@ def delivered_keyboard(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="✅ Доставлено",
+                    text="📍 Передано магазину",
                     callback_data=f"delivered:{order_id}",
                 )
             ]

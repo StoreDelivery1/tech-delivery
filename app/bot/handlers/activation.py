@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
@@ -38,7 +38,7 @@ async def activation_handler(
         if (
             user.activation_code_expires_at
             and user.activation_code_expires_at
-            < datetime.now(timezone.utc)
+            < datetime.now()
         ):
             await message.answer(
                 "⌛ Термін дії коду закінчився.\n"

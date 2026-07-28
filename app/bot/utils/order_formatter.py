@@ -20,8 +20,8 @@ def format_order(order: Order) -> str:
         f"📍 <b>Куди:</b> {order.to_store.name}\n\n"
         f"📝 <b>Опис:</b>\n"
         f"{order.description}\n\n"
-        f"⚖️ <b>Вага:</b> "
-        f"{order.estimated_weight or '-'} кг\n"
+        f"📏 <b>Розмір:</b> "
+        f"{getattr(order, 'size', None).value if getattr(order, 'size', None) else '-'}\n"
         f"{priority} <b>Пріоритет:</b> "
         f"{order.priority.value}"
     )

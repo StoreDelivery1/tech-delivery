@@ -12,6 +12,7 @@ from app.bot.states.activation import ActivationState
 from app.database.session import SessionLocal
 from app.models.user import UserRole
 from app.services.activation_service import ActivationService
+from app.services.manager_service import ManagerService
 
 router = Router()
 
@@ -54,10 +55,14 @@ async def start_handler(
 
             if user.role == UserRole.MANAGER:
 
+                active, completed = ManagerService.get_my_created_orders(db, user.id)
+                active_count = len(active)
+                all_count = len(active) + len(completed)
+
                 await message.answer(
                     f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
                     "Ви увійшли як <b>Менеджер</b>.",
-                    reply_markup=manager_main_menu(),
+                    reply_markup=manager_main_menu(active_count=active_count, all_count=all_count),
                 )
 
                 return
@@ -67,7 +72,7 @@ async def start_handler(
                 await message.answer(
                     f"👋 Вітаємо, <b>{user.full_name}</b>!\n\n"
                     "Ви увійшли як <b>Кур'єр</b>.",
-                    reply_markup=courier_main_menu(),
+                    reply_markup=courier_main_menu(user),
                 )
 
                 return

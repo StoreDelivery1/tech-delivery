@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.activation_service import ActivationService
 
@@ -8,12 +8,37 @@ from app.services.activation_service import ActivationService
 class UserService:
 
     @staticmethod
+    def _normalize_user_data(user_data: UserCreate | UserUpdate) -> dict:
+        data = user_data.model_dump(exclude_unset=True)
+        role = data.get("role")
+
+        if role in {UserRole.ADMIN, UserRole.COURIER}:
+            data["store_id"] = None
+        elif role == UserRole.MANAGER and data.get("store_id") is None:
+            raise ValueError("Manager must have a store_id")
+
+        return data
+
+    @staticmethod
+    def _normalize_user_instance(user: User, data: dict) -> None:
+        role = data.get("role", user.role)
+
+        if role in {UserRole.ADMIN, UserRole.COURIER}:
+            data["store_id"] = None
+        elif role == UserRole.MANAGER and data.get("store_id") is None and user.store_id is None:
+            raise ValueError("Manager must have a store_id")
+
+        for key, value in data.items():
+            setattr(user, key, value)
+
+    @staticmethod
     def create(
         db: Session,
         user: UserCreate,
     ) -> User:
 
-        new_user = User(**user.model_dump())
+        normalized_data = UserService._normalize_user_data(user)
+        new_user = User(**normalized_data)
 
         db.add(new_user)
         db.commit()
@@ -64,12 +89,8 @@ class UserService:
         data: UserUpdate,
     ) -> User:
 
-        update_data = data.model_dump(
-            exclude_unset=True,
-        )
-
-        for key, value in update_data.items():
-            setattr(user, key, value)
+        update_data = UserService._normalize_user_data(data)
+        UserService._normalize_user_instance(user, update_data)
 
         db.commit()
         db.refresh(user)

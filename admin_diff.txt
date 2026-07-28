@@ -1,0 +1,1525 @@
+﻿diff --git a/app/bot/handlers/admin.py b/app/bot/handlers/admin.py
+index f0b0f57..2b4cae7 100644
+--- a/app/bot/handlers/admin.py
++++ b/app/bot/handlers/admin.py
+@@ -1,35 +1,307 @@
++import logging
++
+ from aiogram import F, Router
+ from aiogram.fsm.context import FSMContext
+-from aiogram.types import Message
++from aiogram.types import (
++    CallbackQuery,
++    InlineKeyboardButton,
++    InlineKeyboardMarkup,
++    Message,
++)
+ 
+ from app.bot.keyboards.main_menu import (
+-    admin_couriers_menu,
++    admin_users_menu,
+     admin_main_menu,
+ )
+-from app.bot.states.admin import AdminCourierState
++from app.bot.states.admin import AdminCourierState, AdminManagerState
+ from app.database.session import SessionLocal
+-from app.models.user import UserRole
++from app.models.store import StoreNetwork
++from app.models.user import UserRole, User, UserStatus, CourierAvailability
++from app.models.order import Order, OrderStatus
+ from app.schemas.user import UserCreate
+ from app.services.store_service import StoreService
+ from app.services.user_service import UserService
++from app.services.activation_service import ActivationService
++
++logger = logging.getLogger(__name__)
+ 
+ router = Router()
+ 
++NETWORKS = {
++    "apple": {
++        "label": "ЁЯНП AppleRoom",
++        "network": StoreNetwork.APPLE_ROOM,
++    },
++    "yabko": {
++        "label": "ЁЯНО ╨п╨▒╨║╨╛",
++        "network": StoreNetwork.JABKO,
++    },
++}
++
++
++def build_manager_network_keyboard() -> InlineKeyboardMarkup:
++    buttons = [
++        [
++            InlineKeyboardButton(
++                text=config["label"],
++                callback_data=f"admin_manager_network:{network_key}",
++            )
++        ]
++        for network_key, config in NETWORKS.items()
++    ]
++    return InlineKeyboardMarkup(inline_keyboard=buttons)
++
++
++def build_manager_store_keyboard(stores: list) -> InlineKeyboardMarkup:
++    buttons = [
++        [
++            InlineKeyboardButton(
++                text=f"ЁЯПм {store.name}",
++                callback_data=f"admin_manager_store:{store.id}",
++            )
++        ]
++        for store in stores
++    ]
++    buttons.append([
++        InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_manager_back")
++    ])
++    return InlineKeyboardMarkup(inline_keyboard=buttons)
++
++
++def build_managers_list_keyboard(managers: list, page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:
++    # Sort: active first, then inactive, alphabetically within each group
++    active_managers = sorted(
++        [m for m in managers if m.telegram_id is not None],
++        key=lambda m: m.full_name
++    )
++    inactive_managers = sorted(
++        [m for m in managers if m.telegram_id is None],
++        key=lambda m: m.full_name
++    )
++    sorted_managers = active_managers + inactive_managers
++    
++    # Pagination
++    total_pages = (len(sorted_managers) + page_size - 1) // page_size
++    start_idx = page * page_size
++    end_idx = start_idx + page_size
++    page_managers = sorted_managers[start_idx:end_idx]
++    
++    buttons = []
++    for manager in page_managers:
++        store_name = manager.store.name if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++        network_label = ""
++        if manager.store:
++            if manager.store.network.value == "APPLE_ROOM":
++                network_label = "ЁЯНП AppleRoom"
++            elif manager.store.network.value == "JABKO":
++                network_label = "ЁЯНО ╨п╨▒╨║╨╛"
++        
++        button_text = f"ЁЯСд {manager.full_name}\nЁЯПк {network_label} {store_name}".strip()
++        buttons.append([
++            InlineKeyboardButton(
++                text=button_text,
++                callback_data=f"admin_manager_detail:{manager.id}",
++            )
++        ])
++    
++    # Add pagination buttons
++    pagination_buttons = []
++    if page > 0:
++        pagination_buttons.append(
++            InlineKeyboardButton(
++                text="тЧАя╕П ╨Я╨╛╨┐╨╡╤А╨╡╨┤╨╜╤П",
++                callback_data=f"admin_managers_page:{page - 1}",
++            )
++        )
++    if page < total_pages - 1:
++        pagination_buttons.append(
++            InlineKeyboardButton(
++                text="╨Э╨░╤Б╤В╤Г╨┐╨╜╨░ тЦ╢я╕П",
++                callback_data=f"admin_managers_page:{page + 1}",
++            )
++        )
++    
++    if pagination_buttons:
++        buttons.append(pagination_buttons)
++    
++    buttons.append([
++        InlineKeyboardButton(
++            text="тмЕя╕П ╨Э╨░╨╖╨░╨┤",
++            callback_data="admin_managers_back",
++        )
++    ])
++    return InlineKeyboardMarkup(inline_keyboard=buttons)
++
++
++def build_couriers_list_keyboard(couriers: list, page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:
++    # Sort: BUSY тЖТ AVAILABLE тЖТ OFFLINE, then alphabetically within each group
++    busy_couriers = sorted(
++        [c for c in couriers if c.availability == CourierAvailability.BUSY],
++        key=lambda c: c.full_name
++    )
++    available_couriers = sorted(
++        [c for c in couriers if c.availability == CourierAvailability.AVAILABLE],
++        key=lambda c: c.full_name
++    )
++    offline_couriers = sorted(
++        [c for c in couriers if c.availability == CourierAvailability.OFFLINE],
++        key=lambda c: c.full_name
++    )
++    sorted_couriers = busy_couriers + available_couriers + offline_couriers
++    
++    # Pagination
++    total_pages = (len(sorted_couriers) + page_size - 1) // page_size
++    start_idx = page * page_size
++    end_idx = start_idx + page_size
++    page_couriers = sorted_couriers[start_idx:end_idx]
++    
++    # We need db access to get delivering orders for BUSY couriers
++    db = SessionLocal()
++    try:
++        buttons = []
++        for courier in page_couriers:
++            status_emoji = ""
++            if courier.availability == CourierAvailability.BUSY:
++                status_emoji = "ЁЯЯб "
++            elif courier.availability == CourierAvailability.AVAILABLE:
++                status_emoji = "ЁЯЯв "
++            elif courier.availability == CourierAvailability.OFFLINE:
++                status_emoji = "тЪл "
++            
++            button_text = f"{status_emoji}{courier.full_name}"
++            
++            # For BUSY couriers, add order number
++            if courier.availability == CourierAvailability.BUSY:
++                delivering_order = db.query(Order).filter(
++                    Order.courier_id == courier.id,
++                    Order.status == OrderStatus.DELIVERING
++                ).first()
++                if delivering_order:
++                    button_text += f"\nЁЯУж тДЦ{delivering_order.number}"
++            
++            buttons.append([
++                InlineKeyboardButton(
++                    text=button_text,
++                    callback_data=f"admin_courier_profile:{courier.id}",
++                )
++            ])
++        
++        # Add pagination buttons
++        pagination_buttons = []
++        if page > 0:
++            pagination_buttons.append(
++                InlineKeyboardButton(
++                    text="тЧАя╕П ╨Я╨╛╨┐╨╡╤А╨╡╨┤╨╜╤П",
++                    callback_data=f"admin_couriers_page:{page - 1}",
++                )
++            )
++        if page < total_pages - 1:
++            pagination_buttons.append(
++                InlineKeyboardButton(
++                    text="╨Э╨░╤Б╤В╤Г╨┐╨╜╨░ тЦ╢я╕П",
++                    callback_data=f"admin_couriers_page:{page + 1}",
++                )
++            )
++        
++        if pagination_buttons:
++            buttons.append(pagination_buttons)
++        
++        buttons.append([
++            InlineKeyboardButton(
++                text="тмЕя╕П ╨Э╨░╨╖╨░╨┤",
++                callback_data="admin_couriers_back",
++            )
++        ])
++        return InlineKeyboardMarkup(inline_keyboard=buttons)
++    finally:
++        db.close()
++
++
++def build_manager_profile_keyboard() -> InlineKeyboardMarkup:
++    buttons = [
++        [
++            InlineKeyboardButton(
++                text="ЁЯПк ╨Ч╨╝╤Ц╨╜╨╕╤В╨╕ ╨╝╨░╨│╨░╨╖╨╕╨╜",
++                callback_data="admin_manager_profile_change_store",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="ЁЯФС ╨Я╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram",
++                callback_data="admin_manager_profile_repair_telegram",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="ЁЯЪл ╨Ф╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕",
++                callback_data="admin_manager_profile_deactivate",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="ЁЯЧС ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕",
++                callback_data="admin_manager_profile_delete",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="тмЕя╕П ╨Э╨░╨╖╨░╨┤",
++                callback_data="admin_manager_profile_back",
++            )
++        ],
++    ]
++    return InlineKeyboardMarkup(inline_keyboard=buttons)
++
++
++@router.message(F.text == "ЁЯСе ╨Ъ╨╛╤А╨╕╤Б╤В╤Г╨▓╨░╤З╤Ц")
++async def admin_users_menu_handler(message: Message):
++    await message.answer(
++        "ЁЯСе ╨Ъ╨╛╤А╨╕╤Б╤В╤Г╨▓╨░╤З╤Ц",
++        reply_markup=admin_users_menu(),
++    )
++
+ 
+-@router.message(F.text == "ЁЯЪЪ ╨Ъ╤Г╤А'╤Ф╤А╨╕")
+-async def admin_couriers_menu_handler(message: Message):
++@router.message(F.text == "я┐╜ ╨Я╤А╨░╤Ж╤Ц╨▓╨╜╨╕╨║╨╕")
++async def admin_staff_menu_handler(message: Message):
+     await message.answer(
+-        "ЁЯзСтАНЁЯФз ╨г╨┐╤А╨░╨▓╨╗╤Ц╨╜╨╜╤П ╨║╤Г╤А'╤Ф╤А╨░╨╝╨╕",
+-        reply_markup=admin_couriers_menu(),
++        "ЁЯСе ╨г╨┐╤А╨░╨▓╨╗╤Ц╨╜╨╜╤П ╨┐╤А╨░╤Ж╤Ц╨▓╨╜╨╕╨║╨░╨╝╨╕",
++        reply_markup=admin_staff_menu(),
+     )
+ 
+ 
+-@router.message(F.text == "тЮХ ╨Ф╨╛╨┤╨░╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░")
++@router.message(F.text == "я┐╜ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕")
++async def admin_managers_handler(message: Message):
++    db = SessionLocal()
++    try:
++        # Get all managers
++        all_users = db.query(User).filter(User.role == UserRole.MANAGER).all()
++        
++        # Split into activated and non-activated
++        activated_managers = [u for u in all_users if u.telegram_id is not None]
++        non_activated_managers = [u for u in all_users if u.telegram_id is None]
++        
++        await message.answer(
++            f"ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕\n\n"
++            f"ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╤Ц: {len(activated_managers)}\n"
++            f"тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╤Ц: {len(non_activated_managers)}",
++            reply_markup=build_managers_menu_keyboard(len(activated_managers), len(non_activated_managers)),
++        )
++    finally:
++        db.close()
++
++
++@router.message(F.text == "тЮХ ╨б╤В╨▓╨╛╤А╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░")
+ async def start_admin_courier_creation(message: Message, state: FSMContext):
+     await state.set_state(AdminCourierState.waiting_for_full_name)
+     await message.answer("тЬНя╕П ╨Т╨▓╨╡╨┤╤Ц╤В╤М ╨Я╨Ж╨С ╨║╤Г╤А'╤Ф╤А╨░:")
+ 
+ 
++@router.message(F.text == "тЮХ ╨б╤В╨▓╨╛╤А╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░")
++async def start_admin_manager_creation(message: Message, state: FSMContext):
++    await state.set_state(AdminManagerState.waiting_for_full_name)
++    await message.answer("тЬНя╕П ╨Т╨▓╨╡╨┤╤Ц╤В╤М ╨Я╨Ж╨С ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░:")
++
++
+ @router.message(F.text == "тмЕя╕П ╨Э╨░╨╖╨░╨┤")
+ async def back_to_admin_menu(message: Message, state: FSMContext):
+     await state.clear()
+@@ -41,41 +313,1182 @@ async def back_to_admin_menu(message: Message, state: FSMContext):
+ 
+ @router.message(AdminCourierState.waiting_for_full_name)
+ async def admin_full_name_handler(message: Message, state: FSMContext):
+-    await state.update_data(full_name=message.text)
+-    await state.set_state(AdminCourierState.waiting_for_store)
+-    await message.answer("ЁЯПк ╨Т╨▓╨╡╨┤╤Ц╤В╤М ID ╨╝╨░╨│╨░╨╖╨╕╨╜╤Г ╨┤╨╗╤П ╨║╤Г╤А'╤Ф╤А╨░:")
+-
+-
+-@router.message(AdminCourierState.waiting_for_store)
+-async def admin_store_handler(message: Message, state: FSMContext):
+     db = SessionLocal()
+     try:
+-        store_id = int(message.text)
+-        StoreService.get_store(db, store_id)
+-
+-        data = await state.get_data()
+-        full_name = data["full_name"]
++        full_name = message.text
++        await state.update_data(full_name=full_name)
+ 
+         courier = UserService.create(
+             db=db,
+             user=UserCreate(
+                 full_name=full_name,
+                 role=UserRole.COURIER,
+-                store_id=store_id,
++                store_id=None,
+             ),
+         )
+ 
++        await state.clear()
++        await message.answer(
++            "тЬЕ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╤Б╤В╨▓╨╛╤А╨╡╨╜╨╛.\n\n"
++            f"ЁЯСд {courier.full_name}\n\n"
++            "ЁЯФС ╨Ъ╨╛╨┤ ╨░╨║╤В╨╕╨▓╨░╤Ж╤Ц╤Ч:\n"
++            f"{courier.activation_code}\n\n"
++            "тП│ ╨Ъ╨╛╨┤ ╨┤╤Ц╨╣╤Б╨╜╨╕╨╣ 24 ╨│╨╛╨┤╨╕╨╜╨╕.\n\n"
++            "ЁЯУ▓ ╨Я╨╡╤А╨╡╨┤╨░╨╣╤В╨╡ ╤Ж╨╡╨╣ ╨║╨╛╨┤ ╨║╤Г╤А'╤Ф╤А╤Г ╨┤╨╗╤П ╨░╨║╤В╨╕╨▓╨░╤Ж╤Ц╤Ч ╨▓ Telegram.",
++            reply_markup=admin_users_menu(),
++        )
++    except Exception as exc:
++        logger.exception("Failed to create courier")
++        await state.clear()
++        await message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╤Б╤В╨▓╨╛╤А╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.\n\n"
++            "╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++    finally:
++        db.close()
++
++
++@router.message(AdminManagerState.waiting_for_full_name)
++async def admin_manager_full_name_handler(message: Message, state: FSMContext):
++    full_name = message.text
++    await state.update_data(full_name=full_name)
++    await state.set_state(AdminManagerState.waiting_for_network)
++    await message.answer(
++        "ЁЯМР ╨Ю╨▒╨╡╤А╤Ц╤В╤М ╨╝╨╡╤А╨╡╨╢╤Г ╨╝╨░╨│╨░╨╖╨╕╨╜╤Г:",
++        reply_markup=build_manager_network_keyboard(),
++    )
++
++
++@router.callback_query(F.data.startswith("admin_manager_network:"))
++async def admin_manager_select_network(callback: CallbackQuery, state: FSMContext):
++    network_key = callback.data.split(":", 1)[1]
++    network_config = NETWORKS.get(network_key)
++
++    if network_config is None:
++        await callback.answer("тЭМ ╨Э╨╡╨║╨╛╤А╨╡╨║╤В╨╜╨░ ╨╝╨╡╤А╨╡╨╢╨░", show_alert=True)
++        return
++
++    await state.update_data(selected_network=network_key)
++    await state.set_state(AdminManagerState.waiting_for_store_query)
++    await callback.message.edit_text(
++        f"ЁЯФО ╨Т╨▓╨╡╨┤╤Ц╤В╤М ╤В╨╡╨║╤Б╤В ╨┤╨╗╤П ╨┐╨╛╤И╤Г╨║╤Г ╨╝╨░╨│╨░╨╖╨╕╨╜╤Г ╨▓ ╨╝╨╡╤А╨╡╨╢╤Ц {network_config['label']}"
++    )
++    await callback.answer()
++
++
++@router.message(AdminManagerState.waiting_for_store_query)
++async def admin_manager_store_query_handler(message: Message, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        network_key = data.get("selected_network")
++        network_config = NETWORKS.get(network_key)
++
++        if network_config is None:
++            await state.clear()
++            await message.answer("тЭМ ╨б╨┐╨╛╤З╨░╤В╨║╤Г ╨╛╨▒╨╡╤А╤Ц╤В╤М ╨╝╨╡╤А╨╡╨╢╤Г.", reply_markup=admin_main_menu())
++            return
++
++        query = message.text or ""
++        stores = StoreService.search_stores(db, query, network_config["network"])
++
++        if not stores:
++            await message.answer("тЭМ ╨Ь╨░╨│╨░╨╖╨╕╨╜╨╕ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛. ╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.")
++            return
++
++        await state.update_data(store_candidates=[store.id for store in stores])
++        await state.set_state(AdminManagerState.waiting_for_store_selection)
+         await message.answer(
+-            "тЬЕ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╤Б╤В╨▓╨╛╤А╨╡╨╜╨╛!\n\n"
+-            f"ЁЯСд ╨Я╨Ж╨С: {courier.full_name}\n"
+-            f"ЁЯПк ╨Ь╨░╨│╨░╨╖╨╕╨╜ ID: {courier.store_id}\n"
+-            f"ЁЯФС ╨Ъ╨╛╨┤ ╨░╨║╤В╨╕╨▓╨░╤Ж╤Ц╤Ч: {courier.activation_code}"
++            "ЁЯПм ╨Ю╨▒╨╡╤А╤Ц╤В╤М ╨╝╨░╨│╨░╨╖╨╕╨╜:",
++            reply_markup=build_manager_store_keyboard(stores),
+         )
++    except Exception as exc:
++        logger.exception("Failed to search stores for manager creation")
++        await state.clear()
++        await message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨╖╨╜╨░╨╣╤В╨╕ ╨╝╨░╨│╨░╨╖╨╕╨╜╨╕.",
++            reply_markup=admin_main_menu(),
++        )
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_manager_store:"))
++async def admin_manager_select_store(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        store_id = int(callback.data.split(":", 1)[1])
++        store = StoreService.get_store(db, store_id)
++        data = await state.get_data()
++        full_name = data.get("full_name")
++        manager_id = data.get("manager_id")
++
++        if full_name:
++            # Create flow
++            manager = UserService.create(
++                db=db,
++                user=UserCreate(
++                    full_name=full_name,
++                    role=UserRole.MANAGER,
++                    store_id=store.id,
++                ),
++            )
++
++            await state.clear()
++            await callback.message.answer(
++                "тЬЕ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╤Б╤В╨▓╨╛╤А╨╡╨╜╨╛.\n\n"
++                f"ЁЯСд {manager.full_name}\n\n"
++                f"ЁЯПм ╨Ь╨░╨│╨░╨╖╨╕╨╜:\n{store.name}\n\n"
++                f"ЁЯФС ╨Ъ╨╛╨┤ ╨░╨║╤В╨╕╨▓╨░╤Ж╤Ц╤Ч:\n{manager.activation_code}\n\n"
++                "тП│ ╨Ъ╨╛╨┤ ╨┤╤Ц╨╣╤Б╨╜╨╕╨╣ 24 ╨│╨╛╨┤╨╕╨╜╨╕.\n\n"
++                "ЁЯУ▓ ╨Я╨╡╤А╨╡╨┤╨░╨╣╤В╨╡ ╤Ж╨╡╨╣ ╨║╨╛╨┤ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╤Г.",
++                reply_markup=admin_users_menu(),
++            )
++            await callback.message.edit_text("тЬЕ ╨Ю╨▒╤А╨░╨╜╨╛ ╨╝╨░╨│╨░╨╖╨╕╨╜. ╨Я╤А╨╛╨┤╨╛╨▓╨╢╤Г╨╣╤В╨╡ ╨▓ ╨╝╨╡╨╜╤О ╨┐╤А╨░╤Ж╤Ц╨▓╨╜╨╕╨║╤Ц╨▓.")
++            await callback.answer()
++        elif manager_id:
++            # Change flow
++            manager = db.get(User, manager_id)
++            if not manager:
++                await state.clear()
++                await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.", reply_markup=admin_main_menu())
++                return
++            
++            manager.store_id = store.id
++            db.add(manager)
++            db.commit()
++            
++            # Reload manager to ensure relationships are fresh
++            manager = db.get(User, manager_id)
++            
++            # Get store info for display
++            store_name = manager.store.name if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++            network_label = ""
++            if manager.store:
++                if manager.store.network.value == "APPLE_ROOM":
++                    network_label = "ЁЯНП AppleRoom"
++                elif manager.store.network.value == "JABKO":
++                    network_label = "ЁЯНО ╨п╨▒╨║╨╛"
++            
++            profile_text = (
++                f"тЬЕ ╨Ь╨░╨│╨░╨╖╨╕╨╜ ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨╖╨╝╤Ц╨╜╨╡╨╜╨╛.\n\n"
++                f"ЁЯСд {manager.full_name}\n\n"
++                f"ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╜╨╕╨╣\n\n"
++                f"ЁЯПк {network_label} {store_name}\n\n"
++                f"ЁЯУЮ {'@' + manager.username if manager.username else '╨Э╨╡ ╨┐╤А╨╕╨▓\'╤П╨╖╨░╨╜╨╛'}"
++            )
++            
++            # Keep manager_id in state to show profile again
++            await callback.message.edit_text(
++                profile_text,
++                reply_markup=build_manager_profile_keyboard(),
++            )
++            await callback.answer()
++        else:
++            await state.clear()
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╛╨┐╨╡╤А╨░╤Ж╤Ц╤О.", reply_markup=admin_main_menu())
++    except Exception as exc:
++        logger.exception("Failed to select store")
+         await state.clear()
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨╖╨░╨▓╨╡╤А╤И╨╕╤В╨╕ ╨╛╨┐╨╡╤А╨░╤Ж╤Ц╤О.\n\n╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_manager_back")
++async def admin_manager_back(callback: CallbackQuery, state: FSMContext):
++    await state.clear()
++    await callback.message.answer(
++        "тмЕя╕П ╨Я╨╛╨▓╨╡╤А╨╜╤Г╤В╨╛╤Б╤П ╨┤╨╛ ╨│╨╛╨╗╨╛╨▓╨╜╨╛╨│╨╛ ╨╝╨╡╨╜╤О",
++        reply_markup=admin_main_menu(),
++    )
++    await callback.answer()
++
++
++@router.callback_query(F.data.startswith("admin_managers_page:"))
++async def managers_page_handler(callback: CallbackQuery):
++    db = SessionLocal()
++    try:
++        page = int(callback.data.split(":", 1)[1])
++        all_managers = db.query(User).filter(User.role == UserRole.MANAGER).all()
++        
++        if not all_managers:
++            await callback.message.edit_text(
++                "ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕\n\nтЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╤Ц╨▓ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.",
++                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
++                    [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_managers_back")],
++                ])
++            )
++        else:
++            await callback.message.edit_text(
++                "ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕",
++                reply_markup=build_managers_list_keyboard(all_managers, page=page),
++            )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_managers_list_back")
++async def managers_list_back(callback: CallbackQuery):
++    db = SessionLocal()
++    try:
++        all_users = db.query(User).filter(User.role == UserRole.MANAGER).all()
++        activated_managers = [u for u in all_users if u.telegram_id is not None]
++        non_activated_managers = [u for u in all_users if u.telegram_id is None]
++        
++        await callback.message.edit_text(
++            f"ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕\n\n"
++            f"ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╤Ц: {len(activated_managers)}\n"
++            f"тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╤Ц: {len(non_activated_managers)}",
++            reply_markup=build_managers_menu_keyboard(len(activated_managers), len(non_activated_managers)),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_managers_back")
++async def managers_back(callback: CallbackQuery):
++    db = SessionLocal()
++    try:
++        all_managers = db.query(User).filter(User.role == UserRole.MANAGER).all()
++        
++        if not all_managers:
++            await callback.message.edit_text(
++                "ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕\n\nтЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╤Ц╨▓ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.",
++                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
++                    [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_managers_back")],
++                ])
++            )
++        else:
++            await callback.message.edit_text(
++                "ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕",
++                reply_markup=build_managers_list_keyboard(all_managers, page=0),
++            )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_manager_detail:"))
++async def manager_profile(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        manager_id = int(callback.data.split(":", 1)[1])
++        manager = db.get(User, manager_id)
++        
++        # Store manager_id in state for profile actions
++        await state.update_data(current_manager_id=manager_id)
++        
++        if not manager or manager.role != UserRole.MANAGER:
++            await callback.message.edit_text(
++                "тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.",
++                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
++                    InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_managers_list_back")
++                ]])
++            )
++            await callback.answer()
++            return
++        
++        # Determine status
++        status = "ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╜╨╕╨╣" if manager.telegram_id else "тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╜╨╕╨╣"
++        
++        # Get store info
++        store_info = f"{manager.store.name}" if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++        
++        # Get telegram username
++        telegram_username = f"@{manager.username}" if manager.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {manager.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯПк {store_info}\n\n"
++            f"ЁЯУЮ {telegram_username}"
++        )
++        
++        await callback.message.edit_text(
++            profile_text,
++            reply_markup=build_manager_profile_keyboard(),
++        )
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to load manager profile")
++        await callback.message.edit_text(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨╖╨░╨▓╨░╨╜╤В╨░╨╢╨╕╤В╨╕ ╨┐╤А╨╛╤Д╤Ц╨╗╤М ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.",
++            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
++                InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_managers_list_back")
++            ]])
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
+ 
+-    except ValueError as e:
+-        await message.answer(f"тЭМ {str(e)}")
+-    except (TypeError, ValueError):
+-        await message.answer("тЭМ ╨Т╨▓╨╡╨┤╤Ц╤В╤М ╨║╨╛╤А╨╡╨║╤В╨╜╨╕╨╣ ID ╨╝╨░╨│╨░╨╖╨╕╨╜╤Г")
++@router.callback_query(F.data == "admin_manager_profile_change_store")
++async def manager_profile_change_store(callback: CallbackQuery, state: FSMContext):
++    data = await state.get_data()
++    manager_id = data.get("current_manager_id")
++    
++    if not manager_id:
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.")
++        await callback.answer()
++        return
++    
++    # Save manager_id for the store selection handler
++    await state.update_data(manager_id=manager_id)
++    # Set state to start the network selection
++    await state.set_state(AdminManagerState.waiting_for_network)
++    
++    await callback.message.edit_text(
++        "ЁЯМР ╨Ю╨▒╨╡╤А╤Ц╤В╤М ╨╜╨╛╨▓╤Г ╨╝╨╡╤А╨╡╨╢╤Г ╨╝╨░╨│╨░╨╖╨╕╨╜╤Г:",
++        reply_markup=build_manager_network_keyboard(),
++    )
++    await callback.answer()
++
++
++@router.callback_query(F.data == "admin_manager_profile_repair_telegram")
++async def manager_profile_repair_telegram(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        manager_id = data.get("current_manager_id")
++        
++        if not manager_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.")
++            await callback.answer()
++            return
++        
++        manager = db.get(User, manager_id)
++        if not manager:
++            await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Clear telegram fields
++        manager.telegram_id = None
++        manager.username = None
++        
++        # Generate new activation code and set expiration
++        ActivationService.assign_activation_code(db, manager)
++        
++        # Format expiration date
++        expiration_date = manager.activation_code_expires_at.strftime("%d.%m.%Y %H:%M") if manager.activation_code_expires_at else "тАФ"
++        
++        confirmation_text = (
++            f"тЬЕ Telegram ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨▓╤Ц╨┤╨▓'╤П╨╖╨░╨╜╨╛.\n\n"
++            f"╨Э╨╛╨▓╨╕╨╣ ╨║╨╛╨┤:\n{manager.activation_code}\n\n"
++            f"╨Ф╤Ц╨╣╤Б╨╜╨╕╨╣ ╨┤╨╛:\n{expiration_date}"
++        )
++        
++        await callback.message.answer(confirmation_text)
++        await callback.answer()
++        
++        # Update profile in state and show it
++        await state.update_data(current_manager_id=manager_id)
++        
++        # Determine status
++        status = "ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╜╨╕╨╣" if manager.telegram_id else "тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╜╨╕╨╣"
++        
++        # Get store info
++        store_info = f"{manager.store.name}" if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++        
++        # Get telegram username
++        telegram_username = f"@{manager.username}" if manager.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {manager.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯПк {store_info}\n\n"
++            f"ЁЯУЮ {telegram_username}"
++        )
++        
++        await callback.message.edit_text(
++            profile_text,
++            reply_markup=build_manager_profile_keyboard(),
++        )
++    except Exception as exc:
++        logger.exception("Failed to repair manager telegram")
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┐╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram.\n\n╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_manager_profile_deactivate")
++async def manager_profile_deactivate(callback: CallbackQuery, state: FSMContext):
++    data = await state.get_data()
++    manager_id = data.get("current_manager_id")
++    
++    if not manager_id:
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.")
++        await callback.answer()
++        return
++    
++    # Show confirmation
++    confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
++        [
++            InlineKeyboardButton(
++                text="тЬЕ ╨Я╤Ц╨┤╤В╨▓╨╡╤А╨┤╨╕╤В╨╕",
++                callback_data=f"admin_manager_deactivate_confirm:{manager_id}",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="тЭМ ╨б╨║╨░╤Б╤Г╨▓╨░╤В╨╕",
++                callback_data="admin_manager_profile_back",
++            )
++        ],
++    ])
++    
++    await callback.message.edit_text(
++        "тЪая╕П ╨Т╨╕ ╨▓╨┐╨╡╨▓╨╜╨╡╨╜╤Ц?\n\n"
++        "╨Ф╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╨╕╨╣ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А ╨╜╨╡ ╨╖╨╝╨╛╨╢╨╡ ╤Г╨▓╤Ц╨╣╤В╨╕ ╨▓ ╨▒╨╛╤В.",
++        reply_markup=confirmation_keyboard,
++    )
++    await callback.answer()
++
++
++@router.callback_query(F.data.startswith("admin_manager_deactivate_confirm:"))
++async def manager_deactivate_confirm(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        manager_id = int(callback.data.split(":", 1)[1])
++        manager = db.get(User, manager_id)
++        
++        if not manager:
++            await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Deactivate manager
++        manager.status = UserStatus.INACTIVE
++        db.add(manager)
++        db.commit()
++        
++        # Reload manager
++        manager = db.get(User, manager_id)
++        
++        # Show confirmation
++        await callback.message.answer("тЬЕ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨┤╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╨╛.")
++        await callback.answer()
++        
++        # Update profile in state and show it
++        await state.update_data(current_manager_id=manager_id)
++        
++        # Determine status
++        status = "ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╜╨╕╨╣" if manager.telegram_id else "тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╜╨╕╨╣"
++        
++        # Get store info
++        store_info = f"{manager.store.name}" if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++        
++        # Get telegram username
++        telegram_username = f"@{manager.username}" if manager.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {manager.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯПк {store_info}\n\n"
++            f"ЁЯУЮ {telegram_username}"
++        )
++        
++        await callback.message.edit_text(
++            profile_text,
++            reply_markup=build_manager_profile_keyboard(),
++        )
++    except Exception as exc:
++        logger.exception("Failed to deactivate manager")
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┤╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.\n\n╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.message(F.text == "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕")
++async def admin_couriers_handler(message: Message):
++    db = SessionLocal()
++    try:
++        all_couriers = db.query(User).filter(User.role == UserRole.COURIER).all()
++        
++        if not all_couriers:
++            await message.answer(
++                "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕\n\nтЭМ ╨Ъ╤Г╤А'╤Ф╤А╤Ц╨▓ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.",
++                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
++                    [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_couriers_menu_back")],
++                ])
++            )
++        else:
++            await message.answer(
++                "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕",
++                reply_markup=build_couriers_list_keyboard(all_couriers, page=0),
++            )
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_couriers_page:"))
++async def couriers_page_handler(callback: CallbackQuery):
++    db = SessionLocal()
++    try:
++        page = int(callback.data.split(":", 1)[1])
++        all_couriers = db.query(User).filter(User.role == UserRole.COURIER).all()
++        
++        await callback.message.edit_text(
++            "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕",
++            reply_markup=build_couriers_list_keyboard(all_couriers, page=page),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_courier_profile:"))
++async def courier_profile(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        courier_id = int(callback.data.split(":", 1)[1])
++        courier = db.get(User, courier_id)
++        
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Store courier_id in state for profile actions
++        await state.update_data(current_courier_id=courier_id)
++        
++        # Determine status
++        status_map = {
++            CourierAvailability.AVAILABLE: "ЁЯЯв ╨Э╨░ ╨╖╨╝╤Ц╨╜╤Ц",
++            CourierAvailability.BUSY: "ЁЯЯб ╨Т╨╕╨║╨╛╨╜╤Г╤Ф ╨┤╨╛╤Б╤В╨░╨▓╨║╤Г",
++            CourierAvailability.OFFLINE: "тЪл ╨Я╨╛╨╖╨░ ╨╖╨╝╤Ц╨╜╨╛╤О",
++        }
++        status = status_map.get(courier.availability, "тАФ")
++        
++        # Get telegram username
++        telegram_username = f"@{courier.username}" if courier.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {courier.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯУ▒ {telegram_username}"
++        )
++        
++        # If BUSY, show current order
++        if courier.availability == CourierAvailability.BUSY:
++            delivering_order = db.query(Order).filter(
++                Order.courier_id == courier_id,
++                Order.status == OrderStatus.DELIVERING
++            ).first()
++            
++            if delivering_order:
++                profile_text += f"\n\nЁЯУж тДЦ{delivering_order.number}"
++        
++        # Build profile keyboard
++        buttons = [
++            [InlineKeyboardButton(text="ЁЯФС ╨Я╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram", callback_data="admin_courier_profile_repair_telegram")],
++            [InlineKeyboardButton(text="ЁЯЪл ╨Ф╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕", callback_data="admin_courier_profile_deactivate")],
++            [InlineKeyboardButton(text="ЁЯЧС ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕", callback_data="admin_courier_profile_delete")],
++            [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_courier_profile_back")],
++        ]
++        
++        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
++        await callback.message.edit_text(profile_text, reply_markup=keyboard)
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to show courier profile")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨╖╨░╨▓╨░╨╜╤В╨░╨╢╨╕╤В╨╕ ╨┐╤А╨╛╤Д╤Ц╨╗╤М.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_courier_profile_repair_telegram")
++async def courier_profile_repair_telegram(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        courier_id = data.get("current_courier_id")
++        
++        if not courier_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++            await callback.answer()
++            return
++        
++        courier = db.get(User, courier_id)
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Clear telegram fields
++        courier.telegram_id = None
++        courier.username = None
++        
++        # Generate new activation code and set expiration
++        ActivationService.assign_activation_code(db, courier)
++        
++        # Format expiration date
++        expiration_date = courier.activation_code_expires_at.strftime("%d.%m.%Y %H:%M") if courier.activation_code_expires_at else "тАФ"
++        
++        confirmation_text = (
++            f"тЬЕ Telegram ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨▓╤Ц╨┤╨▓'╤П╨╖╨░╨╜╨╛.\n\n"
++            f"╨Э╨╛╨▓╨╕╨╣ ╨║╨╛╨┤:\n{courier.activation_code}\n\n"
++            f"╨Ф╤Ц╨╣╤Б╨╜╨╕╨╣ ╨┤╨╛:\n{expiration_date}"
++        )
++        
++        await callback.message.answer(confirmation_text)
++        await callback.answer()
++        
++        # Return to profile
++        await state.update_data(current_courier_id=courier_id)
++        
++        # Determine status
++        status_map = {
++            CourierAvailability.AVAILABLE: "ЁЯЯв ╨Э╨░ ╨╖╨╝╤Ц╨╜╤Ц",
++            CourierAvailability.BUSY: "ЁЯЯб ╨Т╨╕╨║╨╛╨╜╤Г╤Ф ╨┤╨╛╤Б╤В╨░╨▓╨║╤Г",
++            CourierAvailability.OFFLINE: "тЪл ╨Я╨╛╨╖╨░ ╨╖╨╝╤Ц╨╜╨╛╤О",
++        }
++        status = status_map.get(courier.availability, "тАФ")
++        
++        # Get telegram username
++        telegram_username = f"@{courier.username}" if courier.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {courier.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯУ▒ {telegram_username}"
++        )
++        
++        # If BUSY, show current order
++        if courier.availability == CourierAvailability.BUSY:
++            delivering_order = db.query(Order).filter(
++                Order.courier_id == courier_id,
++                Order.status == OrderStatus.DELIVERING
++            ).first()
++            
++            if delivering_order:
++                profile_text += f"\n\nЁЯУж тДЦ{delivering_order.number}"
++        
++        # Build profile keyboard
++        buttons = [
++            [InlineKeyboardButton(text="ЁЯФС ╨Я╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram", callback_data="admin_courier_profile_repair_telegram")],
++            [InlineKeyboardButton(text="ЁЯЪл ╨Ф╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕", callback_data="admin_courier_profile_deactivate")],
++            [InlineKeyboardButton(text="ЁЯЧС ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕", callback_data="admin_courier_profile_delete")],
++            [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_courier_profile_back")],
++        ]
++        
++        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
++        await callback.message.edit_text(profile_text, reply_markup=keyboard)
++    except Exception as exc:
++        logger.exception("Failed to repair courier telegram")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨║╨╛╨╜╨░╤В╨╕ ╨╛╨┐╨╡╤А╨░╤Ж╤Ц╤О.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_courier_profile_deactivate")
++async def courier_profile_deactivate(callback: CallbackQuery, state: FSMContext):
++    data = await state.get_data()
++    courier_id = data.get("current_courier_id")
++    
++    if not courier_id:
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++        await callback.answer()
++        return
++    
++    # Show confirmation
++    confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
++        [
++            InlineKeyboardButton(
++                text="тЬЕ ╨Я╤Ц╨┤╤В╨▓╨╡╤А╨┤╨╕╤В╨╕",
++                callback_data=f"admin_courier_deactivate_confirm:{courier_id}",
++            )
++        ],
++        [
++            InlineKeyboardButton(
++                text="тЭМ ╨б╨║╨░╤Б╤Г╨▓╨░╤В╨╕",
++                callback_data="admin_courier_profile_back",
++            )
++        ],
++    ])
++    
++    await callback.message.edit_text(
++        "тЪая╕П ╨Т╨╕ ╨▓╨┐╨╡╨▓╨╜╨╡╨╜╤Ц?\n\n"
++        "╨Ф╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╨╕╨╣ ╨║╤Г╤А'╤Ф╤А ╨╜╨╡ ╨╖╨╝╨╛╨╢╨╡ ╤Г╨▓╤Ц╨╣╤В╨╕ ╨▓ ╨▒╨╛╤В.",
++        reply_markup=confirmation_keyboard,
++    )
++    await callback.answer()
++
++
++@router.callback_query(F.data.startswith("admin_courier_deactivate_confirm:"))
++async def courier_deactivate_confirm(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        courier_id = int(callback.data.split(":", 1)[1])
++        courier = db.get(User, courier_id)
++        
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Deactivate courier
++        courier.status = UserStatus.INACTIVE
++        db.add(courier)
++        db.commit()
++        
++        # Reload courier
++        courier = db.get(User, courier_id)
++        
++        # Show confirmation
++        await callback.message.answer("тЬЕ ╨Ъ╤Г╤А'╤Ф╤А ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨┤╨╡╨░╨║╤В╨╕╨▓╨╛╨▓╨░╨╜╨╛.")
++        await callback.answer()
++        
++        # Return to profile
++        await state.update_data(current_courier_id=courier_id)
++        
++        # Determine status
++        status_map = {
++            CourierAvailability.AVAILABLE: "ЁЯЯв ╨Э╨░ ╨╖╨╝╤Ц╨╜╤Ц",
++            CourierAvailability.BUSY: "ЁЯЯб ╨Т╨╕╨║╨╛╨╜╤Г╤Ф ╨┤╨╛╤Б╤В╨░╨▓╨║╤Г",
++            CourierAvailability.OFFLINE: "тЪл ╨Я╨╛╨╖╨░ ╨╖╨╝╤Ц╨╜╨╛╤О",
++        }
++        status = status_map.get(courier.availability, "тАФ")
++        
++        # Get telegram username
++        telegram_username = f"@{courier.username}" if courier.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {courier.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯУ▒ {telegram_username}"
++        )
++        
++        # If BUSY, show current order
++        if courier.availability == CourierAvailability.BUSY:
++            delivering_order = db.query(Order).filter(
++                Order.courier_id == courier_id,
++                Order.status == OrderStatus.DELIVERING
++            ).first()
++            
++            if delivering_order:
++                profile_text += f"\n\nЁЯУж тДЦ{delivering_order.number}"
++        
++        # Build profile keyboard
++        buttons = [
++            [InlineKeyboardButton(text="ЁЯФС ╨Я╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram", callback_data="admin_courier_profile_repair_telegram")],
++            [InlineKeyboardButton(text="ЁЯЪл ╨Ф╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕", callback_data="admin_courier_profile_deactivate")],
++            [InlineKeyboardButton(text="ЁЯЧС ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕", callback_data="admin_courier_profile_delete")],
++            [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_courier_profile_back")],
++        ]
++        
++        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
++        await callback.message.edit_text(profile_text, reply_markup=keyboard)
++    except Exception as exc:
++        logger.exception("Failed to deactivate courier")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┤╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_courier_profile_delete")
++async def courier_profile_delete(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        courier_id = data.get("current_courier_id")
++        
++        if not courier_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++            await callback.answer()
++            return
++        
++        courier = db.get(User, courier_id)
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Check for active orders
++        active_statuses = [
++            OrderStatus.WAITING_FOR_COURIER,
++            OrderStatus.ACCEPTED,
++            OrderStatus.PICKED_UP,
++            OrderStatus.DELIVERING,
++        ]
++        active_orders = db.query(Order).filter(
++            Order.courier_id == courier_id,
++            Order.status.in_(active_statuses)
++        ).all()
++        
++        # Show error if any active orders exist
++        if active_orders:
++            error_message = (
++                f"тЭМ ╨Э╨╡╨╝╨╛╨╢╨╗╨╕╨▓╨╛ ╨▓╨╕╨┤╨░╨╗╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.\n\n"
++                f"ЁЯФ┤ ╨Р╨║╤В╨╕╨▓╨╜╨╕╤Е ╨╖╨░╨╝╨╛╨▓╨╗╨╡╨╜╤М: {len(active_orders)}\n\n"
++                f"╨б╨┐╨╛╤З╨░╤В╨║╤Г ╨╖╨░╨▓╨╡╤А╤И╤Ц╤В╤М ╨▓╤Б╤Ц ╨╖╨░╨╝╨╛╨▓╨╗╨╡╨╜╨╜╤П."
++            )
++            
++            await callback.message.answer(error_message)
++            await callback.answer()
++            return
++        
++        # Show confirmation if no active orders
++        confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
++            [
++                InlineKeyboardButton(
++                    text="тЬЕ ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕",
++                    callback_data=f"admin_courier_delete_confirm:{courier_id}",
++                )
++            ],
++            [
++                InlineKeyboardButton(
++                    text="тЭМ ╨б╨║╨░╤Б╤Г╨▓╨░╤В╨╕",
++                    callback_data="admin_courier_profile_back",
++                )
++            ],
++        ])
++        
++        await callback.message.edit_text(
++            "тЪая╕П ╨Т╨╕ ╨▓╨┐╨╡╨▓╨╜╨╡╨╜╤Ц?\n\n"
++            "╨Ъ╤Г╤А'╤Ф╤А ╨▒╤Г╨┤╨╡ ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╛ ╨▒╨╡╨╖╨┐╨╛╨▓╨╛╤А╨╛╤В╨╜╨╛.",
++            reply_markup=confirmation_keyboard,
++        )
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to check courier for deletion")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┐╨╡╤А╨╡╨▓╤Ц╤А╨╕╤В╨╕ ╨╝╨╛╨╢╨╗╨╕╨▓╤Ц╤Б╤В╤М ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╜╤П.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_courier_delete_confirm:"))
++async def courier_delete_confirm(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        courier_id = int(callback.data.split(":", 1)[1])
++        courier = db.get(User, courier_id)
++        
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Delete courier
++        db.delete(courier)
++        db.commit()
++        
++        # Show confirmation
++        await callback.message.answer("тЬЕ ╨Ъ╤Г╤А'╤Ф╤А ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╛.")
++        await callback.answer()
++        
++        # Return to couriers menu
++        await callback.message.answer(
++            "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕",
++            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
++                [InlineKeyboardButton(text="ЁЯЯв ╨Э╨░ ╨╖╨╝╤Ц╨╜╤Ц", callback_data="admin_show_available_couriers")],
++                [InlineKeyboardButton(text="ЁЯЯб ╨Т╨╕╨║╨╛╨╜╤Г╤О╤В╤М ╨┤╨╛╤Б╤В╨░╨▓╨║╤Г", callback_data="admin_show_busy_couriers")],
++                [InlineKeyboardButton(text="тЪл ╨Я╨╛╨╖╨░ ╨╖╨╝╤Ц╨╜╨╛╤О", callback_data="admin_show_offline_couriers")],
++                [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_couriers_menu_back")],
++            ]),
++        )
++    except Exception as exc:
++        logger.exception("Failed to delete courier")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨┤╨░╨╗╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_courier_profile_back")
++async def courier_profile_back(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        courier_id = data.get("current_courier_id")
++        
++        if not courier_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨║╤Г╤А'╤Ф╤А╨░.")
++            await callback.answer()
++            return
++        
++        courier = db.get(User, courier_id)
++        if not courier:
++            await callback.message.answer("тЭМ ╨Ъ╤Г╤А'╤Ф╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Determine status
++        status_map = {
++            CourierAvailability.AVAILABLE: "ЁЯЯв ╨Э╨░ ╨╖╨╝╤Ц╨╜╤Ц",
++            CourierAvailability.BUSY: "ЁЯЯб ╨Т╨╕╨║╨╛╨╜╤Г╤Ф ╨┤╨╛╤Б╤В╨░╨▓╨║╤Г",
++            CourierAvailability.OFFLINE: "тЪл ╨Я╨╛╨╖╨░ ╨╖╨╝╤Ц╨╜╨╛╤О",
++        }
++        status = status_map.get(courier.availability, "тАФ")
++        
++        # Get telegram username
++        telegram_username = f"@{courier.username}" if courier.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {courier.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯУ▒ {telegram_username}"
++        )
++        
++        # If BUSY, show current order
++        if courier.availability == CourierAvailability.BUSY:
++            delivering_order = db.query(Order).filter(
++                Order.courier_id == courier_id,
++                Order.status == OrderStatus.DELIVERING
++            ).first()
++            
++            if delivering_order:
++                profile_text += f"\n\nЁЯУж тДЦ{delivering_order.number}"
++        
++        # Build profile keyboard
++        buttons = [
++            [InlineKeyboardButton(text="ЁЯФС ╨Я╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╖╨░╤В╨╕ Telegram", callback_data="admin_courier_profile_repair_telegram")],
++            [InlineKeyboardButton(text="ЁЯЪл ╨Ф╨╡╨░╨║╤В╨╕╨▓╤Г╨▓╨░╤В╨╕", callback_data="admin_courier_profile_deactivate")],
++            [InlineKeyboardButton(text="ЁЯЧС ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕", callback_data="admin_courier_profile_delete")],
++            [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_courier_profile_back")],
++        ]
++        
++        keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
++        await callback.message.edit_text(profile_text, reply_markup=keyboard)
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to return to courier profile")
++        await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┐╨╛╨▓╨╡╤А╨╜╤Г╤В╨╕╤Б╤П ╨┤╨╛ ╨┐╤А╨╛╤Д╤Ц╨╗╤П.")
++        await callback.answer()
++    finally:
++        db.close()
++
++
++
++@router.callback_query(F.data == "admin_couriers_back")
++async def couriers_list_back(callback: CallbackQuery):
++    db = SessionLocal()
++    try:
++        all_couriers = db.query(User).filter(User.role == UserRole.COURIER).all()
++        
++        if not all_couriers:
++            await callback.message.edit_text(
++                "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕\n\nтЭМ ╨Ъ╤Г╤А'╤Ф╤А╤Ц╨▓ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.",
++                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
++                    [InlineKeyboardButton(text="тмЕя╕П ╨Э╨░╨╖╨░╨┤", callback_data="admin_couriers_menu_back")],
++                ])
++            )
++        else:
++            await callback.message.edit_text(
++                "ЁЯЪ┤ ╨Ъ╤Г╤А'╤Ф╤А╨╕",
++                reply_markup=build_couriers_list_keyboard(all_couriers, page=0),
++            )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_couriers_menu_back")
++async def admin_couriers_menu_back(callback: CallbackQuery):
++    await callback.message.answer(
++        "ЁЯСе ╨Ъ╨╛╤А╨╕╤Б╤В╤Г╨▓╨░╤З╤Ц",
++        reply_markup=admin_users_menu(),
++    )
++    await callback.answer()
++
++
++@router.callback_query(F.data == "admin_manager_profile_delete")
++async def manager_profile_delete(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        manager_id = data.get("current_manager_id")
++        
++        if not manager_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.")
++            await callback.answer()
++            return
++        
++        manager = db.get(User, manager_id)
++        if not manager:
++            await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Check for created orders (any status)
++        created_orders = db.query(Order).filter(Order.created_by == manager_id).all()
++        
++        # Check for active orders (specific statuses)
++        active_statuses = [
++            OrderStatus.WAITING_FOR_COURIER,
++            OrderStatus.ACCEPTED,
++            OrderStatus.PICKED_UP,
++            OrderStatus.DELIVERING,
++        ]
++        active_orders = db.query(Order).filter(
++            Order.created_by == manager_id,
++            Order.status.in_(active_statuses)
++        ).all()
++        
++        # Check for delivery history (completed orders)
++        completed_orders = db.query(Order).filter(
++            Order.created_by == manager_id,
++            Order.status.in_([OrderStatus.DELIVERED, OrderStatus.CANCELED])
++        ).all()
++        
++        # Show error if any orders exist
++        if created_orders:
++            error_message = "тЭМ ╨Э╨╡╨╝╨╛╨╢╨╗╨╕╨▓╨╛ ╨▓╨╕╨┤╨░╨╗╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.\n\n"
++            
++            if active_orders:
++                error_message += f"ЁЯФ┤ ╨Р╨║╤В╨╕╨▓╨╜╨╕╤Е ╨╖╨░╨╝╨╛╨▓╨╗╨╡╨╜╤М: {len(active_orders)}\n"
++            
++            if completed_orders:
++                error_message += f"тЬЕ ╨Ч╨░╨▓╨╡╤А╤И╨╡╨╜╨╕╤Е ╨╖╨░╨╝╨╛╨▓╨╗╨╡╨╜╤М: {len(completed_orders)}\n"
++            
++            error_message += "\n╨б╨┐╨╛╤З╨░╤В╨║╤Г ╨▓╨╕╨┤╨░╨╗╤Ц╤В╤М ╨░╨▒╨╛ ╨┐╨╡╤А╨╡╨┐╤А╨╕╨▓'╤П╨╢╤Ц╤В╤М ╨▓╤Б╤Ц ╨╖╨░╨╝╨╛╨▓╨╗╨╡╨╜╨╜╤П."
++            
++            await callback.message.answer(error_message)
++            await callback.answer()
++            return
++        
++        # Show confirmation if no orders
++        confirmation_keyboard = InlineKeyboardMarkup(inline_keyboard=[
++            [
++                InlineKeyboardButton(
++                    text="тЬЕ ╨Т╨╕╨┤╨░╨╗╨╕╤В╨╕",
++                    callback_data=f"admin_manager_delete_confirm:{manager_id}",
++                )
++            ],
++            [
++                InlineKeyboardButton(
++                    text="тЭМ ╨б╨║╨░╤Б╤Г╨▓╨░╤В╨╕",
++                    callback_data="admin_manager_profile_back",
++                )
++            ],
++        ])
++        
++        await callback.message.edit_text(
++            "тЪая╕П ╨Т╨╕ ╨▓╨┐╨╡╨▓╨╜╨╡╨╜╤Ц?\n\n"
++            "╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А ╨▒╤Г╨┤╨╡ ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╛ ╨▒╨╡╨╖╨┐╨╛╨▓╨╛╤А╨╛╤В╨╜╨╛.",
++            reply_markup=confirmation_keyboard,
++        )
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to check manager for deletion")
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┐╨╡╤А╨╡╨▓╤Ц╤А╨╕╤В╨╕ ╨╝╨╛╨╢╨╗╨╕╨▓╤Ц╤Б╤В╤М ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╜╤П.\n\n╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data.startswith("admin_manager_delete_confirm:"))
++async def manager_delete_confirm(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        manager_id = int(callback.data.split(":", 1)[1])
++        manager = db.get(User, manager_id)
++        
++        if not manager:
++            await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Delete manager
++        db.delete(manager)
++        db.commit()
++        
++        # Show confirmation
++        await callback.message.answer("тЬЕ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А ╤Г╤Б╨┐╤Ц╤И╨╜╨╛ ╨▓╨╕╨┤╨░╨╗╨╡╨╜╨╛.")
++        await callback.answer()
++        
++        # Return to managers list
++        db = SessionLocal()
++        try:
++            all_users = db.query(User).filter(User.role == UserRole.MANAGER).all()
++            activated_managers = [u for u in all_users if u.telegram_id is not None]
++            non_activated_managers = [u for u in all_users if u.telegram_id is None]
++            
++            await callback.message.edit_text(
++                "ЁЯСитАНЁЯТ╝ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨╕",
++                reply_markup=build_managers_list_keyboard(all_users, page=0),
++            )
++        finally:
++            db.close()
++    except Exception as exc:
++        logger.exception("Failed to delete manager")
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨┤╨░╨╗╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.\n\n╨б╨┐╤А╨╛╨▒╤Г╨╣╤В╨╡ ╤Й╨╡ ╤А╨░╨╖.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
++    finally:
++        db.close()
++
++
++@router.callback_query(F.data == "admin_manager_profile_back")
++async def manager_profile_back(callback: CallbackQuery, state: FSMContext):
++    db = SessionLocal()
++    try:
++        data = await state.get_data()
++        manager_id = data.get("current_manager_id")
++        
++        if not manager_id:
++            await callback.message.answer("тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨▓╨╕╨╖╨╜╨░╤З╨╕╤В╨╕ ╨╝╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░.")
++            await callback.answer()
++            return
++        
++        manager = db.get(User, manager_id)
++        if not manager:
++            await callback.message.answer("тЭМ ╨Ь╨╡╨╜╨╡╨┤╨╢╨╡╤А╨░ ╨╜╨╡ ╨╖╨╜╨░╨╣╨┤╨╡╨╜╨╛.")
++            await callback.answer()
++            return
++        
++        # Determine status
++        status = "ЁЯЯв ╨Р╨║╤В╨╕╨▓╨╜╨╕╨╣" if manager.telegram_id else "тЪк ╨Э╨╡╨░╨║╤В╨╕╨▓╨╜╨╕╨╣"
++        
++        # Get store info
++        store_info = f"{manager.store.name}" if manager.store else "╨Э╨╡ ╨┐╤А╨╕╨╖╨╜╨░╤З╨╡╨╜"
++        
++        # Get telegram username
++        telegram_username = f"@{manager.username}" if manager.username else "╨Э╨╡ ╨┐╤А╨╕╨▓'╤П╨╖╨░╨╜╨╛"
++        
++        profile_text = (
++            f"ЁЯСд {manager.full_name}\n\n"
++            f"{status}\n\n"
++            f"ЁЯПк {store_info}\n\n"
++            f"ЁЯУЮ {telegram_username}"
++        )
++        
++        await callback.message.edit_text(
++            profile_text,
++            reply_markup=build_manager_profile_keyboard(),
++        )
++        await callback.answer()
++    except Exception as exc:
++        logger.exception("Failed to return to manager profile")
++        await callback.message.answer(
++            "тЭМ ╨Э╨╡ ╨▓╨┤╨░╨╗╨╛╤Б╤П ╨┐╨╛╨▓╨╡╤А╨╜╤Г╤В╨╕╤Б╤П ╨┤╨╛ ╨┐╤А╨╛╤Д╤Ц╨╗╤П.",
++            reply_markup=admin_main_menu(),
++        )
++        await callback.answer()
+     finally:
+         db.close()

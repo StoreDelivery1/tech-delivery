@@ -1,6 +1,6 @@
 from app.database.session import SessionLocal
 from app.schemas.order import ManagerOrderCreate
-from app.models.order import OrderPriority
+from app.models.order import OrderPriority, OrderSize
 from app.models.user import User, UserRole
 from app.services.manager_service import ManagerService
 from app.services.courier_service import CourierService
@@ -20,7 +20,7 @@ try:
         ManagerOrderCreate(
             to_store_id=1,
             description="debug order",
-            estimated_weight=2.5,
+            size=OrderSize.SMALL,
             priority=OrderPriority.NORMAL,
         ),
     )

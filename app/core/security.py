@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -21,7 +21,7 @@ def create_access_token(
 ) -> str:
     payload = data.copy()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now()
 
     payload.update(
         {
