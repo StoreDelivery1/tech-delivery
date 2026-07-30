@@ -491,13 +491,15 @@ class NotificationService:
         if order.to_store is None or order.courier is None:
             return
 
-        from app.models.user import User, UserRole
+        from app.models.user import User, UserRole, UserStatus
 
         managers = (
             db.query(User)
             .filter(
                 User.store_id == order.to_store_id,
                 User.role == UserRole.MANAGER,
+                User.status == UserStatus.ACTIVE,
+                User.telegram_id.isnot(None),
             )
             .all()
         )
@@ -535,6 +537,15 @@ class NotificationService:
 
         # Send to all destination managers
         for manager in managers:
+            if manager.telegram_id == order.courier.telegram_id:
+                logger.warning(
+                    "Skipping delivery confirmation recipient with courier Telegram ID | order_id=%s manager_id=%s telegram_id=%s",
+                    order.id,
+                    manager.id,
+                    manager.telegram_id,
+                )
+                continue
+
             try:
                 await bot.send_message(
                     chat_id=manager.telegram_id,

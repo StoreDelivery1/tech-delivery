@@ -95,6 +95,7 @@ class Order(Base):
             OrderStatus,
             native_enum=False,
             validate_strings=True,
+            length=100,
         ),
         default=OrderStatus.WAITING_FOR_COURIER,
     )

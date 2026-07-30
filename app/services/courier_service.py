@@ -215,6 +215,15 @@ class CourierService:
                 order,
             )
 
+        if new_status == OrderStatus.AWAITING_CONFIRMATION:
+            order = OrderStatusService.mark_awaiting_confirmation(
+                db,
+                order,
+            )
+            # Courier is free after goods are transferred to destination store.
+            CourierService.set_available(db, courier_id)
+            return order
+
         if new_status == OrderStatus.DELIVERED:
             order = OrderStatusService.deliver(
                 db,
