@@ -28,6 +28,8 @@ from app.services.activation_service import ActivationService
 logger = logging.getLogger(__name__)
 
 router = Router()
+router.message.filter(AdminFilter())
+router.callback_query.filter(AdminFilter())
 
 NETWORKS = {
     "apple": {

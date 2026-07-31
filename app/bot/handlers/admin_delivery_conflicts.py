@@ -15,6 +15,8 @@ from app.services.order_status_service import OrderStatusService
 
 logger = logging.getLogger(__name__)
 router = Router()
+router.message.filter(AdminFilter())
+router.callback_query.filter(AdminFilter())
 
 
 def _build_conflict_management_keyboard(order_id: int) -> InlineKeyboardMarkup:

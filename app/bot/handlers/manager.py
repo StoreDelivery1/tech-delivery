@@ -31,6 +31,8 @@ from app.services.store_service import StoreService
 
 logger = logging.getLogger(__name__)
 router = Router()
+router.message.filter(ManagerFilter())
+router.callback_query.filter(ManagerFilter())
 
 _MY_ORDERS_PAGE_SIZE = 10
 

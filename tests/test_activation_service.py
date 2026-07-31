@@ -5,7 +5,7 @@ from app.models.user import User
 from app.services.activation_service import ActivationService
 
 
-class ActivationServiceTests(unittest.TestCase):
+class TestActivationService(unittest.TestCase):
     def test_assign_activation_code_uses_naive_datetime(self):
         db = Mock()
         db.query.return_value.filter.return_value.first.return_value = None

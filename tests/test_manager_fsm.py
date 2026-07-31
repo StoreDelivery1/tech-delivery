@@ -8,7 +8,7 @@ from app.bot.handlers.manager import (
 from app.models.order import OrderSize
 
 
-class ManagerFSMTests(unittest.TestCase):
+class TestManagerFSM(unittest.TestCase):
     def test_manager_without_store_returns_friendly_error(self):
         class Manager:
             store_id = None

@@ -24,6 +24,8 @@ from app.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 router = Router()
+router.message.filter(CourierFilter())
+router.callback_query.filter(CourierFilter())
 
 
 def is_free_orders_button(text: str | None) -> bool:
@@ -32,7 +34,6 @@ def is_free_orders_button(text: str | None) -> bool:
 
 @router.message(F.text.in_({"📦 Вільні заявки", "📦 Вільні замовлення"}), CourierFilter())
 async def free_orders_handler(message: Message):
-    print(f"ROUTER: courier | {message.text}")
     db = SessionLocal()
 
     try:

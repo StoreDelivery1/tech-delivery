@@ -36,7 +36,7 @@ class FakeMessage:
         self.replies.append(text)
 
 
-class AdminRouterFlowTests(unittest.TestCase):
+class TestAdminRouterFlow(unittest.TestCase):
     def test_router_imports(self):
         self.assertIsNotNone(admin_router)
         self.assertIsNotNone(manager_router)

@@ -1,4 +1,4 @@
-import random
+import secrets
 import string
 from datetime import datetime, timedelta
 
@@ -20,10 +20,10 @@ class ActivationService:
 
         while True:
             suffix = "".join(
-                random.choices(
+                secrets.choice(
                     string.ascii_uppercase + string.digits,
-                    k=ActivationService.CODE_LENGTH,
                 )
+                for _ in range(ActivationService.CODE_LENGTH)
             )
 
             code = f"{ActivationService.CODE_PREFIX}-{suffix}"

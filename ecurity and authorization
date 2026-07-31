@@ -1,0 +1,551 @@
+[1mdiff --git a/app/bot/handlers/admin.py b/app/bot/handlers/admin.py[m
+[1mindex 1fddf76..ef46aea 100644[m
+[1m--- a/app/bot/handlers/admin.py[m
+[1m+++ b/app/bot/handlers/admin.py[m
+[36m@@ -28,6 +28,8 @@[m [mfrom app.services.activation_service import ActivationService[m
+ logger = logging.getLogger(__name__)[m
+ [m
+ router = Router()[m
+[32m+[m[32mrouter.message.filter(AdminFilter())[m
+[32m+[m[32mrouter.callback_query.filter(AdminFilter())[m
+ [m
+ NETWORKS = {[m
+     "apple": {[m
+[1mdiff --git a/app/bot/handlers/admin_delivery_conflicts.py b/app/bot/handlers/admin_delivery_conflicts.py[m
+[1mindex be19eea..4b3a6ec 100644[m
+[1m--- a/app/bot/handlers/admin_delivery_conflicts.py[m
+[1m+++ b/app/bot/handlers/admin_delivery_conflicts.py[m
+[36m@@ -15,6 +15,8 @@[m [mfrom app.services.order_status_service import OrderStatusService[m
+ [m
+ logger = logging.getLogger(__name__)[m
+ router = Router()[m
+[32m+[m[32mrouter.message.filter(AdminFilter())[m
+[32m+[m[32mrouter.callback_query.filter(AdminFilter())[m
+ [m
+ [m
+ def _build_conflict_management_keyboard(order_id: int) -> InlineKeyboardMarkup:[m
+[1mdiff --git a/app/bot/handlers/courier.py b/app/bot/handlers/courier.py[m
+[1mindex 8c12ccc..7d4faec 100644[m
+[1m--- a/app/bot/handlers/courier.py[m
+[1m+++ b/app/bot/handlers/courier.py[m
+[36m@@ -24,6 +24,8 @@[m [mfrom app.services.notification_service import NotificationService[m
+ [m
+ logger = logging.getLogger(__name__)[m
+ router = Router()[m
+[32m+[m[32mrouter.message.filter(CourierFilter())[m
+[32m+[m[32mrouter.callback_query.filter(CourierFilter())[m
+ [m
+ [m
+ def is_free_orders_button(text: str | None) -> bool:[m
+[36m@@ -32,7 +34,6 @@[m [mdef is_free_orders_button(text: str | None) -> bool:[m
+ [m
+ @router.message(F.text.in_({"📦 Вільні заявки", "📦 Вільні замовлення"}), CourierFilter())[m
+ async def free_orders_handler(message: Message):[m
+[31m-    print(f"ROUTER: courier | {message.text}")[m
+     db = SessionLocal()[m
+ [m
+     try:[m
+[1mdiff --git a/app/bot/handlers/manager.py b/app/bot/handlers/manager.py[m
+[1mindex c8f12a7..b9a3732 100644[m
+[1m--- a/app/bot/handlers/manager.py[m
+[1m+++ b/app/bot/handlers/manager.py[m
+[36m@@ -31,6 +31,8 @@[m [mfrom app.services.store_service import StoreService[m
+ [m
+ logger = logging.getLogger(__name__)[m
+ router = Router()[m
+[32m+[m[32mrouter.message.filter(ManagerFilter())[m
+[32m+[m[32mrouter.callback_query.filter(ManagerFilter())[m
+ [m
+ _MY_ORDERS_PAGE_SIZE = 10[m
+ [m
+[1mdiff --git a/app/bot/handlers/manager_delivery_confirmation.py b/app/bot/handlers/manager_delivery_confirmation.py[m
+[1mindex a52f9d4..27ff843 100644[m
+[1m--- a/app/bot/handlers/manager_delivery_confirmation.py[m
+[1m+++ b/app/bot/handlers/manager_delivery_confirmation.py[m
+[36m@@ -15,6 +15,8 @@[m [mfrom app.services.order_status_service import OrderStatusService[m
+ [m
+ logger = logging.getLogger(__name__)[m
+ router = Router()[m
+[32m+[m[32mrouter.message.filter(ManagerFilter())[m
+[32m+[m[32mrouter.callback_query.filter(ManagerFilter())[m
+ [m
+ [m
+ @router.callback_query(lambda callback: callback.data and callback.data.startswith("confirm_delivery:"), ManagerFilter())[m
+[1mdiff --git a/app/core/config.py b/app/core/config.py[m
+[1mindex d5255d4..121cd29 100644[m
+[1m--- a/app/core/config.py[m
+[1m+++ b/app/core/config.py[m
+[36m@@ -10,7 +10,7 @@[m [mclass Settings:[m
+ [m
+     SECRET_KEY: str = os.getenv([m
+         "SECRET_KEY",[m
+[31m-        "super_secret_key_change_me",[m
+[32m+[m[32m        "",[m
+     )[m
+ [m
+     ALGORITHM: str = os.getenv([m
+[1mdiff --git a/app/core/security.py b/app/core/security.py[m
+[1mindex 91b82d6..59b9032 100644[m
+[1m--- a/app/core/security.py[m
+[1m+++ b/app/core/security.py[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-from datetime import datetime, timedelta[m
+[32m+[m[32mfrom datetime import datetime, timedelta, timezone[m
+ from typing import Annotated[m
+ [m
+ from fastapi import Depends, HTTPException, status[m
+[36m@@ -8,7 +8,27 @@[m [mfrom sqlalchemy.orm import Session[m
+ [m
+ from app.core.config import settings[m
+ from app.dependencies import get_db[m
+[31m-from app.models.user import User[m
+[32m+[m[32mfrom app.models.user import User, UserStatus[m
+[32m+[m
+[32m+[m[32m_ALLOWED_JWT_ALGORITHMS = {"HS256"}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef _validate_jwt_settings() -> None:[m
+[32m+[m[32m    if ([m
+[32m+[m[32m        not settings.SECRET_KEY[m
+[32m+[m[32m        or settings.SECRET_KEY in {"change_me_in_env", "<strong_random_secret>"}[m
+[32m+[m[32m        or len(settings.SECRET_KEY) < 32[m
+[32m+[m[32m    ):[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,[m
+[32m+[m[32m            detail="Server authentication is not configured",[m
+[32m+[m[32m        )[m
+[32m+[m
+[32m+[m[32m    if settings.ALGORITHM not in _ALLOWED_JWT_ALGORITHMS:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,[m
+[32m+[m[32m            detail="Unsupported token algorithm configuration",[m
+[32m+[m[32m        )[m
+ [m
+ oauth2_scheme = OAuth2PasswordBearer([m
+     tokenUrl="/auth/login",[m
+[36m@@ -19,20 +39,25 @@[m [mdef create_access_token([m
+     data: dict,[m
+     expires_delta: timedelta | None = None,[m
+ ) -> str:[m
+[32m+[m[32m    _validate_jwt_settings()[m
+[32m+[m
+     payload = data.copy()[m
+ [m
+[31m-    now = datetime.now()[m
+[32m+[m[32m    now = datetime.now(timezone.utc)[m
+[32m+[m[32m    expires_in = expires_delta or timedelta([m
+[32m+[m[32m        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    if expires_in.total_seconds() <= 0:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,[m
+[32m+[m[32m            detail="Invalid token expiration configuration",[m
+[32m+[m[32m        )[m
+ [m
+     payload.update([m
+         {[m
+             "iat": now,[m
+[31m-            "exp": now[m
+[31m-            + ([m
+[31m-                expires_delta[m
+[31m-                or timedelta([m
+[31m-                    minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES,[m
+[31m-                )[m
+[31m-            ),[m
+[32m+[m[32m            "exp": now + expires_in,[m
+             "type": "access",[m
+         }[m
+     )[m
+[36m@@ -45,6 +70,8 @@[m [mdef create_access_token([m
+ [m
+ [m
+ def decode_access_token(token: str) -> dict:[m
+[32m+[m[32m    _validate_jwt_settings()[m
+[32m+[m
+     try:[m
+         payload = jwt.decode([m
+             token,[m
+[36m@@ -89,4 +116,10 @@[m [mdef get_current_user([m
+             detail="User not found",[m
+         )[m
+ [m
+[32m+[m[32m    if user.status != UserStatus.ACTIVE:[m
+[32m+[m[32m        raise HTTPException([m
+[32m+[m[32m            status_code=status.HTTP_403_FORBIDDEN,[m
+[32m+[m[32m            detail="User is inactive",[m
+[32m+[m[32m        )[m
+[32m+[m
+     return user[m
+\ No newline at end of file[m
+[1mdiff --git a/app/routers/couriers.py b/app/routers/couriers.py[m
+[1mindex e0cf81d..261ff63 100644[m
+[1m--- a/app/routers/couriers.py[m
+[1m+++ b/app/routers/couriers.py[m
+[36m@@ -1,7 +1,7 @@[m
+ from fastapi import APIRouter, Depends, HTTPException[m
+ from sqlalchemy.orm import Session[m
+ [m
+[31m-from app.core.security import get_current_user[m
+[32m+[m[32mfrom app.core.permissions import courier_required[m
+ from app.dependencies import get_db[m
+ from app.models.order import OrderStatus[m
+ from app.models.user import User[m
+[36m@@ -25,7 +25,7 @@[m [mrouter = APIRouter([m
+ )[m
+ def get_my_profile([m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.get_profile([m
+[36m@@ -45,7 +45,7 @@[m [mdef get_my_profile([m
+ )[m
+ def get_open_orders([m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     return CourierService.get_open_orders(db)[m
+ [m
+[36m@@ -56,7 +56,7 @@[m [mdef get_open_orders([m
+ )[m
+ def get_my_orders([m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     return CourierService.get_orders([m
+         db=db,[m
+[36m@@ -71,7 +71,7 @@[m [mdef get_my_orders([m
+ def accept_order([m
+     order_id: int,[m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.accept_order([m
+[36m@@ -93,7 +93,7 @@[m [mdef accept_order([m
+ def pickup_order([m
+     order_id: int,[m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.change_status([m
+[36m@@ -116,7 +116,7 @@[m [mdef pickup_order([m
+ def delivering_order([m
+     order_id: int,[m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.change_status([m
+[36m@@ -139,7 +139,7 @@[m [mdef delivering_order([m
+ def deliver_order([m
+     order_id: int,[m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.change_status([m
+[36m@@ -161,7 +161,7 @@[m [mdef deliver_order([m
+ )[m
+ def get_my_statistics([m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     return CourierService.get_statistics([m
+         db=db,[m
+[36m@@ -176,7 +176,7 @@[m [mdef get_my_statistics([m
+ def update_my_status([m
+     data: CourierStatusUpdate,[m
+     db: Session = Depends(get_db),[m
+[31m-    current_user: User = Depends(get_current_user),[m
+[32m+[m[32m    current_user: User = Depends(courier_required),[m
+ ):[m
+     try:[m
+         return CourierService.update_online_status([m
+[1mdiff --git a/app/routers/orders.py b/app/routers/orders.py[m
+[1mindex ca9d390..494e6b7 100644[m
+[1m--- a/app/routers/orders.py[m
+[1m+++ b/app/routers/orders.py[m
+[36m@@ -3,7 +3,7 @@[m [mfrom typing import Annotated[m
+ from fastapi import APIRouter, Depends, HTTPException[m
+ from sqlalchemy.orm import Session[m
+ [m
+[31m-from app.core.security import get_current_user[m
+[32m+[m[32mfrom app.core.permissions import admin_required, courier_required, manager_required[m
+ from app.dependencies import get_db[m
+ from app.models.user import User[m
+ from app.schemas.order import ([m
+[36m@@ -22,7 +22,7 @@[m [mrouter = APIRouter([m
+ @router.post("/", response_model=OrderResponse)[m
+ def create_order([m
+     order: OrderCreate,[m
+[31m-    current_user: Annotated[User, Depends(get_current_user)],[m
+[32m+[m[32m    current_user: Annotated[User, Depends(manager_required)],[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     try:[m
+[36m@@ -40,6 +40,7 @@[m [mdef create_order([m
+ [m
+ @router.get("/", response_model=list[OrderResponse])[m
+ def get_orders([m
+[32m+[m[32m    current_user: Annotated[User, Depends(admin_required)],[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     return OrderService.get_orders(db=db)[m
+[36m@@ -49,6 +50,7 @@[m [mdef get_orders([m
+ def update_order_status([m
+     order_id: int,[m
+     data: OrderStatusUpdate,[m
+[32m+[m[32m    current_user: Annotated[User, Depends(admin_required)],[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     try:[m
+[36m@@ -67,7 +69,7 @@[m [mdef update_order_status([m
+ @router.patch("/{order_id}/assign", response_model=OrderResponse)[m
+ def assign_courier([m
+     order_id: int,[m
+[31m-    current_user: Annotated[User, Depends(get_current_user)],[m
+[32m+[m[32m    current_user: Annotated[User, Depends(courier_required)],[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     try:[m
+[1mdiff --git a/app/routers/stores.py b/app/routers/stores.py[m
+[1mindex b4834e3..6fd5080 100644[m
+[1m--- a/app/routers/stores.py[m
+[1m+++ b/app/routers/stores.py[m
+[36m@@ -2,6 +2,7 @@[m [mfrom fastapi import APIRouter, Depends, HTTPException[m
+ from sqlalchemy.orm import Session[m
+ [m
+ from app.core.permissions import admin_required[m
+[32m+[m[32mfrom app.core.security import get_current_user[m
+ from app.dependencies import get_db[m
+ from app.models.user import User[m
+ from app.schemas.store import StoreCreate, StoreResponse[m
+[36m@@ -18,6 +19,7 @@[m [mrouter = APIRouter([m
+     response_model=list[StoreResponse],[m
+ )[m
+ def get_stores([m
+[32m+[m[32m    current_user: User = Depends(get_current_user),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     return StoreService.get_stores(db)[m
+[36m@@ -29,6 +31,7 @@[m [mdef get_stores([m
+ )[m
+ def get_store([m
+     store_id: int,[m
+[32m+[m[32m    current_user: User = Depends(get_current_user),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     try:[m
+[1mdiff --git a/app/routers/users.py b/app/routers/users.py[m
+[1mindex 298404f..ea14bca 100644[m
+[1m--- a/app/routers/users.py[m
+[1m+++ b/app/routers/users.py[m
+[36m@@ -1,7 +1,9 @@[m
+ from fastapi import APIRouter, Depends, HTTPException[m
+ from sqlalchemy.orm import Session[m
+ [m
+[32m+[m[32mfrom app.core.permissions import admin_required[m
+ from app.dependencies import get_db[m
+[32m+[m[32mfrom app.models.user import User[m
+ from app.schemas.user import ([m
+     UserCreate,[m
+     UserResponse,[m
+[36m@@ -18,6 +20,7 @@[m [mrouter = APIRouter([m
+ @router.post("/", response_model=UserResponse)[m
+ def create_user([m
+     user: UserCreate,[m
+[32m+[m[32m    current_user: User = Depends(admin_required),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     return UserService.create([m
+[36m@@ -28,6 +31,7 @@[m [mdef create_user([m
+ [m
+ @router.get("/", response_model=list[UserResponse])[m
+ def get_users([m
+[32m+[m[32m    current_user: User = Depends(admin_required),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     return UserService.get_all(db)[m
+[36m@@ -36,6 +40,7 @@[m [mdef get_users([m
+ @router.get("/{user_id}", response_model=UserResponse)[m
+ def get_user([m
+     user_id: int,[m
+[32m+[m[32m    current_user: User = Depends(admin_required),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     user = UserService.get_by_id([m
+[36m@@ -56,6 +61,7 @@[m [mdef get_user([m
+ def update_user([m
+     user_id: int,[m
+     data: UserUpdate,[m
+[32m+[m[32m    current_user: User = Depends(admin_required),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     user = UserService.get_by_id([m
+[36m@@ -79,6 +85,7 @@[m [mdef update_user([m
+ @router.delete("/{user_id}")[m
+ def delete_user([m
+     user_id: int,[m
+[32m+[m[32m    current_user: User = Depends(admin_required),[m
+     db: Session = Depends(get_db),[m
+ ):[m
+     user = UserService.get_by_id([m
+[1mdiff --git a/app/services/activation_service.py b/app/services/activation_service.py[m
+[1mindex ae0d87a..675ba03 100644[m
+[1m--- a/app/services/activation_service.py[m
+[1m+++ b/app/services/activation_service.py[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-import random[m
+[32m+[m[32mimport secrets[m
+ import string[m
+ from datetime import datetime, timedelta[m
+ [m
+[36m@@ -20,10 +20,10 @@[m [mclass ActivationService:[m
+ [m
+         while True:[m
+             suffix = "".join([m
+[31m-                random.choices([m
+[32m+[m[32m                secrets.choice([m
+                     string.ascii_uppercase + string.digits,[m
+[31m-                    k=ActivationService.CODE_LENGTH,[m
+                 )[m
+[32m+[m[32m                for _ in range(ActivationService.CODE_LENGTH)[m
+             )[m
+ [m
+             code = f"{ActivationService.CODE_PREFIX}-{suffix}"[m
+[1mdiff --git a/app/services/auth_service.py b/app/services/auth_service.py[m
+[1mindex cfcbc2d..d583666 100644[m
+[1m--- a/app/services/auth_service.py[m
+[1m+++ b/app/services/auth_service.py[m
+[36m@@ -30,8 +30,8 @@[m [mclass AuthService:[m
+ [m
+         if user.status != UserStatus.ACTIVE:[m
+             raise HTTPException([m
+[31m-                status_code=403,[m
+[31m-                detail="User is inactive",[m
+[32m+[m[32m                status_code=401,[m
+[32m+[m[32m                detail="Invalid credentials",[m
+             )[m
+ [m
+         user.last_login_at = datetime.now()[m
+[1mdiff --git a/app/services/notification_service.py b/app/services/notification_service.py[m
+[1mindex c005473..692222b 100644[m
+[1m--- a/app/services/notification_service.py[m
+[1m+++ b/app/services/notification_service.py[m
+[36m@@ -135,11 +135,10 @@[m [mclass NotificationService:[m
+                 return None[m
+ [m
+             logger.info([m
+[31m-                "Sending message to manager | order_id=%s order_number=%s manager_id=%s manager_telegram_id=%s",[m
+[32m+[m[32m                "Sending message to manager | order_id=%s order_number=%s manager_id=%s",[m
+                 order.id,[m
+                 order.number,[m
+                 manager.id,[m
+[31m-                manager.telegram_id,[m
+             )[m
+ [m
+             message = await bot.send_message([m
+[36m@@ -539,10 +538,9 @@[m [mclass NotificationService:[m
+         for manager in managers:[m
+             if manager.telegram_id == order.courier.telegram_id:[m
+                 logger.warning([m
+[31m-                    "Skipping delivery confirmation recipient with courier Telegram ID | order_id=%s manager_id=%s telegram_id=%s",[m
+[32m+[m[32m                    "Skipping delivery confirmation recipient with courier Telegram ID | order_id=%s manager_id=%s",[m
+                     order.id,[m
+                     manager.id,[m
+[31m-                    manager.telegram_id,[m
+                 )[m
+                 continue[m
+ [m
+[1mdiff --git a/requirements.txt b/requirements.txt[m
+[1mindex 2c8746f..7300731 100644[m
+Binary files a/requirements.txt and b/requirements.txt differ
+[1mdiff --git a/tests/test_activation_service.py b/tests/test_activation_service.py[m
+[1mindex c308638..b5a60ce 100644[m
+[1m--- a/tests/test_activation_service.py[m
+[1m+++ b/tests/test_activation_service.py[m
+[36m@@ -5,7 +5,7 @@[m [mfrom app.models.user import User[m
+ from app.services.activation_service import ActivationService[m
+ [m
+ [m
+[31m-class ActivationServiceTests(unittest.TestCase):[m
+[32m+[m[32mclass TestActivationService(unittest.TestCase):[m
+     def test_assign_activation_code_uses_naive_datetime(self):[m
+         db = Mock()[m
+         db.query.return_value.filter.return_value.first.return_value = None[m
+[1mdiff --git a/tests/test_admin_router_flow.py b/tests/test_admin_router_flow.py[m
+[1mindex 3a12b00..c13cfb0 100644[m
+[1m--- a/tests/test_admin_router_flow.py[m
+[1m+++ b/tests/test_admin_router_flow.py[m
+[36m@@ -36,7 +36,7 @@[m [mclass FakeMessage:[m
+         self.replies.append(text)[m
+ [m
+ [m
+[31m-class AdminRouterFlowTests(unittest.TestCase):[m
+[32m+[m[32mclass TestAdminRouterFlow(unittest.TestCase):[m
+     def test_router_imports(self):[m
+         self.assertIsNotNone(admin_router)[m
+         self.assertIsNotNone(manager_router)[m
+[1mdiff --git a/tests/test_courier_buttons.py b/tests/test_courier_buttons.py[m
+[1mindex cc2a885..731b5bf 100644[m
+[1m--- a/tests/test_courier_buttons.py[m
+[1m+++ b/tests/test_courier_buttons.py[m
+[36m@@ -3,7 +3,7 @@[m [mimport unittest[m
+ from app.bot.handlers.courier import is_free_orders_button[m
+ [m
+ [m
+[31m-class CourierButtonTests(unittest.TestCase):[m
+[32m+[m[32mclass TestCourierButton(unittest.TestCase):[m
+     def test_accepts_current_and_legacy_button_labels(self):[m
+         self.assertTrue(is_free_orders_button("📦 Вільні заявки"))[m
+         self.assertTrue(is_free_orders_button("📦 Вільні замовлення"))[m
+[1mdiff --git a/tests/test_manager_fsm.py b/tests/test_manager_fsm.py[m
+[1mindex 10d20c9..da11776 100644[m
+[1m--- a/tests/test_manager_fsm.py[m
+[1m+++ b/tests/test_manager_fsm.py[m
+[36m@@ -8,7 +8,7 @@[m [mfrom app.bot.handlers.manager import ([m
+ from app.models.order import OrderSize[m
+ [m
+ [m
+[31m-class ManagerFSMTests(unittest.TestCase):[m
+[32m+[m[32mclass TestManagerFSM(unittest.TestCase):[m
+     def test_manager_without_store_returns_friendly_error(self):[m
+         class Manager:[m
+             store_id = None[m
+[1mdiff --git a/tests/test_manager_store_search.py b/tests/test_manager_store_search.py[m
+[1mindex b2baa18..540c6a4 100644[m
+[1m--- a/tests/test_manager_store_search.py[m
+[1m+++ b/tests/test_manager_store_search.py[m
+[36m@@ -4,7 +4,7 @@[m [mfrom app.models.store import StoreNetwork[m
+ from app.services.store_service import StoreService[m
+ [m
+ [m
+[31m-class ManagerStoreSearchTests(unittest.TestCase):[m
+[32m+[m[32mclass TestManagerStoreSearch(unittest.TestCase):[m
+     def test_search_stores_uses_network_and_query(self):[m
+         db = None[m
+         self.assertTrue(hasattr(StoreService, "search_stores"))[m
+[1mdiff --git a/tests/test_user_service.py b/tests/test_user_service.py[m
+[1mindex c5277c4..73490bb 100644[m
+[1m--- a/tests/test_user_service.py[m
+[1m+++ b/tests/test_user_service.py[m
+[36m@@ -5,7 +5,7 @@[m [mfrom app.schemas.user import UserCreate, UserUpdate[m
+ from app.services.user_service import UserService[m
+ [m
+ [m
+[31m-class UserServiceValidationTests(unittest.TestCase):[m
+[32m+[m[32mclass TestUserServiceValidation(unittest.TestCase):[m
+     def test_create_manager_requires_store_id(self):[m
+         with self.assertRaises(ValueError):[m
+             UserService.create([m
