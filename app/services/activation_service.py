@@ -4,29 +4,37 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 
 
 class ActivationService:
 
-    CODE_PREFIX = "TD"
-    CODE_LENGTH = 4
-    CODE_EXPIRE_HOURS = 24
+    CODE_PREFIX = "TD-"
+    CODE_TOTAL_LENGTH = 7
+    CODE_EXPIRE_MINUTES = 60
 
     @staticmethod
     def generate_code(
         db: Session,
     ) -> str:
 
+        suffix_length = (
+            ActivationService.CODE_TOTAL_LENGTH
+            - len(ActivationService.CODE_PREFIX)
+        )
+
+        if suffix_length <= 0:
+            raise ValueError("Invalid activation code configuration")
+
         while True:
             suffix = "".join(
                 secrets.choice(
                     string.ascii_uppercase + string.digits,
                 )
-                for _ in range(ActivationService.CODE_LENGTH)
+                for _ in range(suffix_length)
             )
 
-            code = f"{ActivationService.CODE_PREFIX}-{suffix}"
+            code = f"{ActivationService.CODE_PREFIX}{suffix}"
 
             exists = (
                 db.query(User)
@@ -47,7 +55,7 @@ class ActivationService:
 
         user.activation_code_expires_at = (
             datetime.now()
-            + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
+            + timedelta(minutes=ActivationService.CODE_EXPIRE_MINUTES)
         )
 
         db.commit()
@@ -90,6 +98,7 @@ class ActivationService:
             .filter(
                 User.telegram_id == telegram_id,
                 User.role == UserRole.ADMIN,
+                User.status == UserStatus.ACTIVE,
             )
             .first()
         )
@@ -105,6 +114,7 @@ class ActivationService:
             .filter(
                 User.telegram_id == telegram_id,
                 User.role == UserRole.MANAGER,
+                User.status == UserStatus.ACTIVE,
             )
             .first()
         )
@@ -120,6 +130,7 @@ class ActivationService:
             .filter(
                 User.telegram_id == telegram_id,
                 User.role == UserRole.COURIER,
+                User.status == UserStatus.ACTIVE,
             )
             .first()
         )
@@ -189,7 +200,7 @@ class ActivationService:
 
         user.activation_code_expires_at = (
             datetime.now()
-            + timedelta(hours=ActivationService.CODE_EXPIRE_HOURS)
+            + timedelta(minutes=ActivationService.CODE_EXPIRE_MINUTES)
         )
 
         db.commit()

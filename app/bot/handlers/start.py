@@ -10,7 +10,7 @@ from app.bot.keyboards.main_menu import (
 )
 from app.bot.states.activation import ActivationState
 from app.database.session import SessionLocal
-from app.models.user import UserRole
+from app.models.user import UserRole, UserStatus
 from app.services.activation_service import ActivationService
 from app.services.manager_service import ManagerService
 
@@ -35,6 +35,12 @@ async def start_handler(
         )
 
         if user is not None:
+            if user.status != UserStatus.ACTIVE:
+                await state.clear()
+                await message.answer(
+                    "Ваш обліковий запис неактивний. Зверніться до адміністратора."
+                )
+                return
 
             ActivationService.update_last_login(
                 db,
