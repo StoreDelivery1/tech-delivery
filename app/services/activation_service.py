@@ -10,7 +10,7 @@ from app.models.user import User, UserRole, UserStatus
 class ActivationService:
 
     CODE_PREFIX = "TD-"
-    CODE_TOTAL_LENGTH = 7
+    CODE_SUFFIX_LENGTH = 7
     CODE_EXPIRE_MINUTES = 60
 
     @staticmethod
@@ -18,12 +18,7 @@ class ActivationService:
         db: Session,
     ) -> str:
 
-        suffix_length = (
-            ActivationService.CODE_TOTAL_LENGTH
-            - len(ActivationService.CODE_PREFIX)
-        )
-
-        if suffix_length <= 0:
+        if ActivationService.CODE_SUFFIX_LENGTH <= 0:
             raise ValueError("Invalid activation code configuration")
 
         while True:
@@ -31,7 +26,7 @@ class ActivationService:
                 secrets.choice(
                     string.ascii_uppercase + string.digits,
                 )
-                for _ in range(suffix_length)
+                for _ in range(ActivationService.CODE_SUFFIX_LENGTH)
             )
 
             code = f"{ActivationService.CODE_PREFIX}{suffix}"

@@ -797,7 +797,7 @@ async def admin_full_name_handler(message: Message, state: FSMContext):
             f"👤 {courier.full_name}\n\n"
             "🔑 Код активації:\n"
             f"{courier.activation_code}\n\n"
-            "⏳ Код дійсний 24 години.\n\n"
+            "⏳ Код дійсний 60 хвилин.\n\n"
             "📲 Передайте цей код кур'єру для активації в Telegram.",
             reply_markup=admin_users_menu(),
         )
@@ -905,7 +905,7 @@ async def admin_manager_select_store(callback: CallbackQuery, state: FSMContext)
                 f"👤 {manager.full_name}\n\n"
                 f"🏬 Магазин:\n{store.name}\n\n"
                 f"🔑 Код активації:\n{manager.activation_code}\n\n"
-                "⏳ Код дійсний 24 години.\n\n"
+                "⏳ Код дійсний 60 хвилин.\n\n"
                 "📲 Передайте цей код менеджеру.",
                 reply_markup=admin_users_menu(),
             )
