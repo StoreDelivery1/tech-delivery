@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.order import Order, OrderStatus
 from app.models.user import User, CourierAvailability
+from app.bot.utils.store_formatter import format_store_name
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,8 @@ class DistributionService:
     @staticmethod
     def _format_order_offer(order) -> str:
         """Format order for telegram inline offer."""
-        from_store = order.from_store.name if order.from_store else "—"
-        to_store = order.to_store.name if order.to_store else "—"
+        from_store = format_store_name(order.from_store) if order.from_store else "—"
+        to_store = format_store_name(order.to_store) if order.to_store else "—"
         return (
             f"📦 Нова заявка №<b>{order.number}</b>\n\n"
             f"📍 {from_store} → {to_store}\n"

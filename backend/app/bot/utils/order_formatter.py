@@ -1,4 +1,5 @@
 from app.models.order import Order
+from app.bot.utils.store_formatter import format_store_name
 
 
 def format_order(order: Order) -> str:
@@ -16,8 +17,8 @@ def format_order(order: Order) -> str:
 
     return (
         f"📦 <b>Замовлення {order.number}</b>\n\n"
-        f"🏪 <b>Звідки:</b> {order.from_store.name}\n"
-        f"📍 <b>Куди:</b> {order.to_store.name}\n\n"
+        f"🏪 <b>Звідки:</b> {format_store_name(order.from_store)}\n"
+        f"📍 <b>Куди:</b> {format_store_name(order.to_store)}\n\n"
         f"📝 <b>Опис:</b>\n"
         f"{order.description}\n\n"
         f"📏 <b>Розмір:</b> "
