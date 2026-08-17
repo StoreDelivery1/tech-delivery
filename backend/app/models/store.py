@@ -1,7 +1,14 @@
-from sqlalchemy import Boolean, Float, Integer, String
+import enum
+
+from sqlalchemy import Boolean, Enum, Float, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
+
+
+class StoreNetwork(str, enum.Enum):
+    APPLE_ROOM = "APPLE_ROOM"
+    JABKO = "JABKO"
 
 
 class Store(Base):
@@ -31,6 +38,16 @@ class Store(Base):
 
     longitude: Mapped[float] = mapped_column(
         Float,
+    )
+
+    network: Mapped[StoreNetwork] = mapped_column(
+        Enum(
+            StoreNetwork,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        default=StoreNetwork.APPLE_ROOM,
     )
 
     is_active: Mapped[bool] = mapped_column(

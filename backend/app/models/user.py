@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -18,6 +18,12 @@ class UserStatus(str, enum.Enum):
     INACTIVE = "INACTIVE"
 
 
+class CourierAvailability(str, enum.Enum):
+    OFFLINE = "OFFLINE"
+    AVAILABLE = "AVAILABLE"
+    BUSY = "BUSY"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -27,9 +33,32 @@ class User(Base):
         index=True,
     )
 
-    telegram_id: Mapped[int] = mapped_column(
+    telegram_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         unique=True,
         index=True,
+        nullable=True,
+    )
+
+    activation_code: Mapped[str | None] = mapped_column(
+        String(10),
+        nullable=True,
+        unique=True,
+    )
+
+    activation_code_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
     )
 
     username: Mapped[str | None] = mapped_column(
@@ -69,8 +98,15 @@ class User(Base):
         nullable=True,
     )
 
-    # Для менеджерів — магазин, у якому вони зараз працюють.
-    # Для кур'єрів та адміністратора може бути NULL.
+    availability: Mapped[CourierAvailability] = mapped_column(
+        Enum(
+            CourierAvailability,
+            native_enum=False,
+            validate_strings=True,
+        ),
+        default=CourierAvailability.OFFLINE,
+    )
+
     store_id: Mapped[int | None] = mapped_column(
         ForeignKey("stores.id"),
         nullable=True,

@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -14,12 +14,21 @@ class OrderPriority(str, enum.Enum):
     URGENT = "URGENT"
 
 
+class OrderSize(str, enum.Enum):
+    SMALL = "SMALL"
+    MEDIUM = "MEDIUM"
+    LARGE = "LARGE"
+
+
 class OrderStatus(str, enum.Enum):
     WAITING_FOR_COURIER = "WAITING_FOR_COURIER"
     ACCEPTED = "ACCEPTED"
     PICKED_UP = "PICKED_UP"
     DELIVERING = "DELIVERING"
-    DELIVERED = "DELIVERED"
+    AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION"
+    COMPLETED = "COMPLETED"
+    DELIVERY_PROBLEM = "DELIVERY_PROBLEM"
+    DELIVERED = "DELIVERED"  # Deprecated: use COMPLETED instead
     CANCELED = "CANCELED"
 
 
@@ -59,8 +68,12 @@ class Order(Base):
         Text,
     )
 
-    estimated_weight: Mapped[float | None] = mapped_column(
-        Float,
+    size: Mapped[OrderSize | None] = mapped_column(
+        Enum(
+            OrderSize,
+            native_enum=False,
+            validate_strings=True,
+        ),
         nullable=True,
     )
 
@@ -82,6 +95,7 @@ class Order(Base):
             OrderStatus,
             native_enum=False,
             validate_strings=True,
+            length=100,
         ),
         default=OrderStatus.WAITING_FOR_COURIER,
     )
@@ -103,6 +117,26 @@ class Order(Base):
 
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime,
+        nullable=True,
+    )
+
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    problem_reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+
+    manager_chat_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )
+
+    manager_message_id: Mapped[int | None] = mapped_column(
+        BigInteger,
         nullable=True,
     )
 

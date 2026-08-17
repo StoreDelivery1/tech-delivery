@@ -22,12 +22,20 @@ router = APIRouter(
 @router.post("/", response_model=OrderResponse)
 def create_order(
     order: OrderCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
     db: Session = Depends(get_db),
 ):
-    return OrderService.create_order(
-        db=db,
-        order=order,
-    )
+    try:
+        return OrderService.create_order(
+            db=db,
+            order=order,
+            current_user=current_user,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
 
 
 @router.get("/", response_model=list[OrderResponse])

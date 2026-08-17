@@ -1,10 +1,11 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.models.user import UserRole, UserStatus
 
 
 class UserBase(BaseModel):
-    telegram_id: int
     username: str | None = None
     full_name: str
     role: UserRole
@@ -16,7 +17,6 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    telegram_id: int | None = None
     username: str | None = None
     full_name: str | None = None
     role: UserRole | None = None
@@ -26,7 +26,11 @@ class UserUpdate(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    telegram_id: int
+    telegram_id: int | None
+    activation_code: str | None
+    activation_code_expires_at: datetime | None
+    activated_at: datetime | None
+    last_login_at: datetime | None
     username: str | None
     full_name: str
     role: UserRole

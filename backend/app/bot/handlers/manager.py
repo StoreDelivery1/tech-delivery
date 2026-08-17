@@ -17,6 +17,7 @@ from app.bot.bot import bot
 from app.bot.filters.roles import ManagerFilter
 from app.bot.keyboards.main_menu import manager_main_menu
 from app.bot.states.manager import ManagerOrderState, ManagerDeliveryConfirmationState
+from app.bot.utils.store_formatter import format_store_name
 from app.database.session import SessionLocal
 from app.models.order import Order, OrderPriority, OrderSize, OrderStatus
 from app.models.store import StoreNetwork
@@ -60,15 +61,6 @@ def is_priority_control_message(text: str | None) -> bool:
         return False
 
     return text in {"⬅️ Змінити мережу"}
-
-
-def format_store_name(store) -> str:
-    network_labels = {
-        StoreNetwork.APPLE_ROOM: "🍏 Appleroom",
-        StoreNetwork.JABKO: "🍎 Ябко",
-    }
-    network_name = network_labels.get(store.network, "🏪 Невідома мережа")
-    return f"{network_name} — {store.name}"
 
 
 def build_network_keyboard(db) -> InlineKeyboardMarkup:

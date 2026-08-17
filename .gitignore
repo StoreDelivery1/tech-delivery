@@ -2,21 +2,33 @@
 .env
 .env.*
 !.env.example
+.envrc
 
 # Python
 __pycache__/
 *.py[cod]
 *.pyo
+*.pyd
+*.egg-info/
+.python-version
 
 # Virtual environments
 .venv/
 venv/
+ENV/
+env/
 
 # Testing and tooling
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
 
 # IDE
 .vscode/
@@ -33,3 +45,24 @@ build/
 
 # Logs
 *.log
+
+# Archives and patches
+*.zip
+*.tar
+*.gz
+*.7z
+*.rar
+*.diff
+*.patch
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
+
+# Runtime artifacts
+*.pid
+*.out

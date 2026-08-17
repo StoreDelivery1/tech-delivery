@@ -1,12 +1,12 @@
 from pydantic import BaseModel, ConfigDict
 
-from app.models.order import OrderPriority, OrderStatus
+from app.models.order import OrderPriority, OrderSize, OrderStatus
 
 
 class OrderCreate(BaseModel):
     to_store_id: int
     description: str
-    estimated_weight: float | None = None
+    size: OrderSize | None = None
     priority: OrderPriority = OrderPriority.NORMAL
     manager_comment: str | None = None
 
@@ -26,7 +26,7 @@ class OrderResponse(BaseModel):
     courier_id: int | None
 
     description: str
-    estimated_weight: float | None
+    size: OrderSize | None
 
     priority: OrderPriority
     manager_comment: str | None
