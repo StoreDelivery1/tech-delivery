@@ -92,6 +92,15 @@ def seed():
                 is_active=True,
             ),
             Store(
+                name="ЛГО",
+                address="Дорошенка 29",
+                city="Львів",
+                latitude=49.838732,
+                longitude=24.024867,
+                network=StoreNetwork.APPLE_ROOM,
+                is_active=True,
+            ),
+            Store(
                 name="ТРЦ King Cross",
                 address="Стрийська 30",
                 city="Львів",
