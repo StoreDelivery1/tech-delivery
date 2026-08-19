@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.permissions import admin_required, courier_required, manager_required
 from app.dependencies import get_db
 from app.models.user import User
 from app.schemas.order import (
@@ -22,7 +22,7 @@ router = APIRouter(
 @router.post("/", response_model=OrderResponse)
 def create_order(
     order: OrderCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(manager_required)],
     db: Session = Depends(get_db),
 ):
     try:
@@ -40,6 +40,7 @@ def create_order(
 
 @router.get("/", response_model=list[OrderResponse])
 def get_orders(
+    current_user: Annotated[User, Depends(admin_required)],
     db: Session = Depends(get_db),
 ):
     return OrderService.get_orders(db=db)
@@ -49,6 +50,7 @@ def get_orders(
 def update_order_status(
     order_id: int,
     data: OrderStatusUpdate,
+    current_user: Annotated[User, Depends(admin_required)],
     db: Session = Depends(get_db),
 ):
     try:
@@ -67,7 +69,7 @@ def update_order_status(
 @router.patch("/{order_id}/assign", response_model=OrderResponse)
 def assign_courier(
     order_id: int,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(courier_required)],
     db: Session = Depends(get_db),
 ):
     try:

@@ -10,7 +10,7 @@ class Settings:
 
     SECRET_KEY: str = os.getenv(
         "SECRET_KEY",
-        "change_me_in_env",
+        "",
     )
 
     ALGORITHM: str = os.getenv(

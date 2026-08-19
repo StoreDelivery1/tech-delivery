@@ -30,8 +30,8 @@ class AuthService:
 
         if user.status != UserStatus.ACTIVE:
             raise HTTPException(
-                status_code=403,
-                detail="User is inactive",
+                status_code=401,
+                detail="Invalid credentials",
             )
 
         user.last_login_at = datetime.now()

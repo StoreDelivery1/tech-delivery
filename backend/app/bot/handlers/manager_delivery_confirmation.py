@@ -15,6 +15,8 @@ from app.services.order_status_service import OrderStatusService
 
 logger = logging.getLogger(__name__)
 router = Router()
+router.message.filter(ManagerFilter())
+router.callback_query.filter(ManagerFilter())
 
 
 @router.callback_query(lambda callback: callback.data and callback.data.startswith("confirm_delivery:"), ManagerFilter())

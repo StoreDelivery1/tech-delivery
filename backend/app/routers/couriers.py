@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.security import get_current_user
+from app.core.permissions import courier_required
 from app.dependencies import get_db
 from app.models.order import OrderStatus
 from app.models.user import User
@@ -25,7 +25,7 @@ router = APIRouter(
 )
 def get_my_profile(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.get_profile(
@@ -45,7 +45,7 @@ def get_my_profile(
 )
 def get_open_orders(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     return CourierService.get_open_orders(db)
 
@@ -56,7 +56,7 @@ def get_open_orders(
 )
 def get_my_orders(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     return CourierService.get_orders(
         db=db,
@@ -71,7 +71,7 @@ def get_my_orders(
 def accept_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.accept_order(
@@ -93,7 +93,7 @@ def accept_order(
 def pickup_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.change_status(
@@ -116,7 +116,7 @@ def pickup_order(
 def delivering_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.change_status(
@@ -139,7 +139,7 @@ def delivering_order(
 def deliver_order(
     order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.change_status(
@@ -161,7 +161,7 @@ def deliver_order(
 )
 def get_my_statistics(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     return CourierService.get_statistics(
         db=db,
@@ -176,7 +176,7 @@ def get_my_statistics(
 def update_my_status(
     data: CourierStatusUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(courier_required),
 ):
     try:
         return CourierService.update_online_status(

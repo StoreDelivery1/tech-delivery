@@ -132,6 +132,9 @@ def manager_main_menu(active_count: int = 0, all_count: int = 0, incoming_count:
                 KeyboardButton(
                     text="📦 Створити заявку",
                 ),
+                KeyboardButton(
+                    text="🛒 Замовити товар",
+                ),
             ],
             [
                 KeyboardButton(

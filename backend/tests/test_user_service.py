@@ -5,7 +5,7 @@ from app.schemas.user import UserCreate, UserUpdate
 from app.services.user_service import UserService
 
 
-class UserServiceValidationTests(unittest.TestCase):
+class TestUserServiceValidation(unittest.TestCase):
     def test_create_manager_requires_store_id(self):
         with self.assertRaises(ValueError):
             UserService.create(

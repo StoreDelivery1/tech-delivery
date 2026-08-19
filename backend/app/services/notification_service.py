@@ -136,11 +136,10 @@ class NotificationService:
                 return None
 
             logger.info(
-                "Sending message to manager | order_id=%s order_number=%s manager_id=%s manager_telegram_id=%s",
+                "Sending message to manager | order_id=%s order_number=%s manager_id=%s",
                 order.id,
                 order.number,
                 manager.id,
-                manager.telegram_id,
             )
 
             message = await bot.send_message(
@@ -540,10 +539,9 @@ class NotificationService:
         for manager in managers:
             if manager.telegram_id == order.courier.telegram_id:
                 logger.warning(
-                    "Skipping delivery confirmation recipient with courier Telegram ID | order_id=%s manager_id=%s telegram_id=%s",
+                    "Skipping delivery confirmation recipient with courier Telegram ID | order_id=%s manager_id=%s",
                     order.id,
                     manager.id,
-                    manager.telegram_id,
                 )
                 continue
 
