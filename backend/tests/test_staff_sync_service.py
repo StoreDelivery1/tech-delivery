@@ -62,10 +62,10 @@ class TestStaffSyncService(unittest.TestCase):
     ):
         return [full_name, username, store, position, dismissed, telegram_id, schedule]
 
-    def test_positions_map_only_courier_titles_to_courier(self):
+    def test_positions_map_courier_and_manager_titles(self):
         self.assertEqual(role_for_position("Кур'єр"), UserRole.COURIER)
         self.assertEqual(role_for_position("Водій - кур'єр"), UserRole.COURIER)
-        self.assertEqual(role_for_position("Менеджер"), UserRole.SELLER)
+        self.assertEqual(role_for_position("Менеджер"), UserRole.MANAGER)
 
     def test_multiline_dismissal_header_is_recognized(self):
         headers = HEADERS.copy()

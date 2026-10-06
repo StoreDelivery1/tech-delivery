@@ -208,6 +208,8 @@ def role_for_position(position: str) -> UserRole:
     normalized_position = _normalize_text(position)
     if normalized_position in {"кур'єр", "водій - кур'єр"}:
         return UserRole.COURIER
+    if normalized_position == "менеджер":
+        return UserRole.MANAGER
     return UserRole.SELLER
 
 
