@@ -1,45 +1,50 @@
-SHEET_LOCATION_STORE_IDS = {
-    "Appleroom Львів (Городоцька 3)": 34,
-    "Appleroom Львів (Пр. Шевченка 3)": 36,
-    "Appleroom Львів (Пр.Свободи 9)": 37,
-    "Appleroom Львів (ТРЦ King Cross)": 39,
-    "Appleroom Львів (ТРЦ Victoria Gardens [Паркінг])": 31,
-    "Appleroom Львів (ТРЦ Victoria Gardens)": 40,
-    "Appleroom Львів (ТЦ Форум)": 42,
-    "Ябко Львів (Victoria Gardens 2)": 44,
-    "Ябко Львів (Victoria Gardens)": 43,
-    "Ябко Львів (ГОРОДОЦЬКА)": 45,
-    "Ябко Львів (Привокзальна)": 48,
-    "Ябко Львів (Проспект)": 49,
-    "Ябко Львів (Спартак)": 51,
-    "Ябко Львів (ТРЦ NewPoint)": 53,
-    "Ябко Львів (ТЦ Great)": 54,
-    "Ябко Львів (Форум)": 55,
-    "Ябко Львів (ШЕВСЬКА)": 57,
-    "Ябко Львів King Cross": 58,
-    "Відділ сервісу ( клієнтські ремонти)": 50,
-    "Львівський ГО": 59,
+SHEET_LOCATION_STORE_NAMES = {
+    "Гавришкевича": "Гавришкевича 5",
+    "Гавришкевича 5": "Гавришкевича 5",
+    "Галицька": "Галицька 1",
+    "Галицька 1": "Галицька 1",
+    "Appleroom Львів (Городоцька 3)": "Городоцька 3",
+    "Городоцька": "Городоцька 3",
+    "Городоцька 3": "Городоцька 3",
+    "Ябко Львів (ГОРОДОЦЬКА)": "Городоцька 3",
+    "Пр. Свободи 35": "Пр. Свободи 35",
+    "Свободи 35": "Пр. Свободи 35",
+    "Пр. Шевченка": "Пр. Шевченка 3",
+    "Пр. Шевченка 3": "Пр. Шевченка 3",
+    "Appleroom Львів (Пр. Шевченка 3)": "Пр. Шевченка 3",
+    "Пр. Свободи 9": "Пр. Свободи 9",
+    "Свободи 9": "Пр. Свободи 9",
+    "Appleroom Львів (Пр.Свободи 9)": "Пр. Свободи 9",
+    "Сервісний Центр": "Сервісний Центр",
+    "Відділ сервісу": "Сервісний Центр",
+    "Відділ сервісу ( клієнтські ремонти)": "Сервісний Центр",
+    "King Cross": "ТРЦ King Cross",
+    "ТРЦ King Cross": "ТРЦ King Cross",
+    "Appleroom Львів (ТРЦ King Cross)": "ТРЦ King Cross",
+    "Ябко Львів King Cross": "ТРЦ King Cross",
+    "Victoria Gardens": "ТРЦ Victoria Gardens (Паркінг)",
+    "Victoria Gardens 2": "ТРЦ Victoria Gardens (Паркінг)",
+    "ТРЦ Victoria Gardens": "ТРЦ Victoria Gardens (Паркінг)",
+    "ТРЦ Victoria Gardens (Паркінг)": "ТРЦ Victoria Gardens (Паркінг)",
+    "Appleroom Львів (ТРЦ Victoria Gardens [Паркінг])": "ТРЦ Victoria Gardens (Паркінг)",
+    "Appleroom Львів (ТРЦ Victoria Gardens)": "ТРЦ Victoria Gardens (Паркінг)",
+    "Ябко Львів (Victoria Gardens 2)": "ТРЦ Victoria Gardens (Паркінг)",
+    "Ябко Львів (Victoria Gardens)": "ТРЦ Victoria Gardens (Паркінг)",
+    "Appleroom Львів (ТЦ Форум)": "ТЦ Форум",
+    "Ябко Львів (Привокзальна)": "Привокзальна",
+    "Ябко Львів (Проспект)": "Проспект",
+    "Ябко Львів (Спартак)": "Спартак",
+    "Ябко Львів (ТРЦ NewPoint)": "ТРЦ NewPoint",
+    "Ябко Львів (ТЦ Great)": "ТЦ Great",
+    "Ябко Львів (Форум)": "Форум",
+    "Ябко Львів (ШЕВСЬКА)": "ШЕВСЬКА",
+    "Львівський ГО": "ЛГО",
 }
 
-UNRESOLVED_SHEET_LOCATIONS = {
-    "Відділ сервісу": (
-        "Manual Store.id selection is required; Store IDs 38 and 50 are both "
-        "named 'Сервісний Центр'."
-    ),
-}
+UNRESOLVED_SHEET_LOCATIONS = {}
 
 NON_STORE_COURIER_DEPARTMENTS = {
     "Відділ транспортної логістики",
-}
-
-CREATE_REQUIRED_SHEET_LOCATIONS = {
-    "Відділ аксесуарів",
-    "Відділ сервісу ( полірування)",
-    "Відділ сервісу (наші ремонти)",
-    "Відділ сервісу (Переклейки)",
-    "Техніка ГО ( нові телефони)",
-    "Техніка ГО (вживана техніка)",
-    "Техніка ГО (Інтернет Продажі)",
 }
 
 SHEET_LOCATION_DISPLAY_NAMES = {
@@ -47,8 +52,8 @@ SHEET_LOCATION_DISPLAY_NAMES = {
     "Львівський ГО": "ЛГО",
 }
 
-STORE_ID_DISPLAY_NAMES = {
-    SHEET_LOCATION_STORE_IDS[location]: display_name
+STORE_NAME_DISPLAY_NAMES = {
+    SHEET_LOCATION_STORE_NAMES[location]: display_name
     for location, display_name in SHEET_LOCATION_DISPLAY_NAMES.items()
-    if location in SHEET_LOCATION_STORE_IDS
+    if location in SHEET_LOCATION_STORE_NAMES
 }

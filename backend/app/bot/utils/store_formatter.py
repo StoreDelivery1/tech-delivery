@@ -1,17 +1,16 @@
 from app.models.store import Store, StoreNetwork
-from app.core.store_location_mapping import STORE_ID_DISPLAY_NAMES
+from app.core.store_location_mapping import STORE_NAME_DISPLAY_NAMES
 
 _NETWORK_LABELS = {
     StoreNetwork.APPLE_ROOM: "🍏 Appleroom",
     StoreNetwork.JABKO: "🍎 Ябко",
 }
 
-
 def display_store_name(store: Store | None) -> str:
     if store is None:
         return "—"
 
-    return STORE_ID_DISPLAY_NAMES.get(getattr(store, "id", None), store.name)
+    return STORE_NAME_DISPLAY_NAMES.get(store.name, store.name)
 
 
 def format_store_name(store: Store | None) -> str:

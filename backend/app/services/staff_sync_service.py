@@ -6,9 +6,8 @@ from dataclasses import asdict, dataclass, field
 from sqlalchemy.orm import Session
 
 from app.core.store_location_mapping import (
-    CREATE_REQUIRED_SHEET_LOCATIONS,
     NON_STORE_COURIER_DEPARTMENTS,
-    SHEET_LOCATION_STORE_IDS,
+    SHEET_LOCATION_STORE_NAMES,
     UNRESOLVED_SHEET_LOCATIONS,
 )
 from app.models.store import Store
@@ -226,7 +225,6 @@ def _location_matches(stores: list[Store], name: str) -> list[Store]:
 
 
 def _resolve_location(
-    stores_by_id: dict[int, Store],
     stores: list[Store],
     location_name: str,
 ) -> tuple[Store | None, str, str | None]:
@@ -237,22 +235,19 @@ def _resolve_location(
     if location_name in NON_STORE_COURIER_DEPARTMENTS:
         return None, "non_store_courier_department", None
 
-    if location_name in CREATE_REQUIRED_SHEET_LOCATIONS:
-        return None, "create_required", "Store metadata is required; automatic creation is disabled."
-
-    store_id = SHEET_LOCATION_STORE_IDS.get(location_name)
-    if store_id is not None:
-        store = stores_by_id.get(store_id)
-        if store is None:
-            return None, "unresolved", f"Configured alias points to missing Store ID {store_id}."
-        return store, "alias", None
-
-    matches = _location_matches(stores, location_name)
+    target_store_name = SHEET_LOCATION_STORE_NAMES.get(location_name, location_name)
+    matches = _location_matches(stores, target_store_name)
     if len(matches) == 1:
-        return matches[0], "exact", None
+        resolution = "alias" if location_name in SHEET_LOCATION_STORE_NAMES else "exact"
+        return matches[0], resolution, None
     if len(matches) > 1:
-        return None, "unresolved", f"Multiple existing Store records match this name ({len(matches)} matches)."
-    return None, "unknown", "No existing Store match; automatic creation is disabled."
+        return None, "unresolved", (
+            f"Store name {target_store_name!r} matches multiple existing records "
+            f"({len(matches)} matches)."
+        )
+    return None, "unresolved", (
+        f"No existing Store matches {target_store_name!r}; automatic creation is disabled."
+    )
 
 
 def sync_staff_rows(
@@ -294,7 +289,8 @@ def sync_staff_rows(
     report.alias_rows_available = sum(
         1
         for row in rows
-        if SHEET_LOCATION_STORE_IDS.get(row.store_name) in stores_by_id
+        if row.store_name in SHEET_LOCATION_STORE_NAMES
+        and len(_location_matches(stores, SHEET_LOCATION_STORE_NAMES[row.store_name])) == 1
     )
     valid_ids = [row.telegram_id for row in rows if row.telegram_id is not None]
     duplicate_ids = {
@@ -332,7 +328,6 @@ def sync_staff_rows(
             store, resolution, resolution_reason = override_store, "store_override", None
         else:
             store, resolution, resolution_reason = _resolve_location(
-                stores_by_id,
                 stores,
                 row.store_name,
             )
@@ -346,10 +341,6 @@ def sync_staff_rows(
             if resolution == "unresolved":
                 report.unresolved_locations[row.store_name] = (
                     report.unresolved_locations.get(row.store_name, 0) + 1
-                )
-            if resolution == "create_required":
-                report.create_required_locations[row.store_name] = (
-                    report.create_required_locations.get(row.store_name, 0) + 1
                 )
             message = f"{row_label}: location {row.store_name!r} unresolved: {resolution_reason}"
             report.location_issues.append(message)

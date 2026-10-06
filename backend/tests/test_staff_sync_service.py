@@ -10,11 +10,10 @@ from app.models.store import Store, StoreNetwork
 from app.models.user import User, UserRole, UserStatus
 from app.bot.utils.store_formatter import display_store_name
 from app.core.store_location_mapping import (
-    CREATE_REQUIRED_SHEET_LOCATIONS,
     NON_STORE_COURIER_DEPARTMENTS,
     SHEET_LOCATION_DISPLAY_NAMES,
-    SHEET_LOCATION_STORE_IDS,
-    STORE_ID_DISPLAY_NAMES,
+    SHEET_LOCATION_STORE_NAMES,
+    STORE_NAME_DISPLAY_NAMES,
     UNRESOLVED_SHEET_LOCATIONS,
 )
 from app.services.staff_sync_service import parse_staff_rows, role_for_position, sync_staff_rows
@@ -84,8 +83,8 @@ class TestStaffSyncService(unittest.TestCase):
         results = {}
 
         with patch(
-            "app.services.staff_sync_service.SHEET_LOCATION_STORE_IDS",
-            {"Test Store": self.store.id},
+            "app.services.staff_sync_service.SHEET_LOCATION_STORE_NAMES",
+            {"Test Store": "Test Store"},
         ):
             for index, schedule in enumerate(("Р", "З"), start=1):
                 report = sync_staff_rows(
@@ -111,33 +110,57 @@ class TestStaffSyncService(unittest.TestCase):
         self.assertEqual(results["З"], results["Р"])
 
     def test_display_mapping_does_not_change_original_store_name(self):
-        store = Store(id=59, name="ЛГО")
+        store = Store(name="ЛГО")
 
         self.assertEqual(display_store_name(store), "ЛГО")
         self.assertEqual(store.name, "ЛГО")
 
-    def test_client_repairs_alias_uses_store_50_and_display_name(self):
+    def test_client_repairs_alias_uses_store_name_and_display_name(self):
         sheet_location = "Відділ сервісу ( клієнтські ремонти)"
-        store = Store(id=50, name="Сервісний Центр")
+        store = Store(name="Сервісний Центр")
 
-        self.assertEqual(SHEET_LOCATION_STORE_IDS[sheet_location], 50)
-        self.assertNotIn(sheet_location, CREATE_REQUIRED_SHEET_LOCATIONS)
+        self.assertEqual(SHEET_LOCATION_STORE_NAMES[sheet_location], "Сервісний Центр")
         self.assertEqual(SHEET_LOCATION_DISPLAY_NAMES[sheet_location], "Сервіс Данилишина")
-        self.assertEqual(STORE_ID_DISPLAY_NAMES[50], "Сервіс Данилишина")
+        self.assertEqual(STORE_NAME_DISPLAY_NAMES["Сервісний Центр"], "Сервіс Данилишина")
         self.assertEqual(display_store_name(store), "Сервіс Данилишина")
         self.assertEqual(store.name, "Сервісний Центр")
 
     def test_confirmed_aliases_and_location_statuses_are_configured(self):
-        self.assertEqual(len(SHEET_LOCATION_STORE_IDS), 20)
-        self.assertEqual(len(CREATE_REQUIRED_SHEET_LOCATIONS), 7)
+        self.assertTrue(SHEET_LOCATION_STORE_NAMES)
+        self.assertTrue(all(isinstance(name, str) for name in SHEET_LOCATION_STORE_NAMES.values()))
+        previous_sheet_aliases = {
+            "Appleroom Львів (Городоцька 3)",
+            "Appleroom Львів (Пр. Шевченка 3)",
+            "Appleroom Львів (Пр.Свободи 9)",
+            "Appleroom Львів (ТРЦ King Cross)",
+            "Appleroom Львів (ТРЦ Victoria Gardens [Паркінг])",
+            "Appleroom Львів (ТРЦ Victoria Gardens)",
+            "Appleroom Львів (ТЦ Форум)",
+            "Ябко Львів (Victoria Gardens 2)",
+            "Ябко Львів (Victoria Gardens)",
+            "Ябко Львів (ГОРОДОЦЬКА)",
+            "Ябко Львів (Привокзальна)",
+            "Ябко Львів (Проспект)",
+            "Ябко Львів (Спартак)",
+            "Ябко Львів (ТРЦ NewPoint)",
+            "Ябко Львів (ТЦ Great)",
+            "Ябко Львів (Форум)",
+            "Ябко Львів (ШЕВСЬКА)",
+            "Ябко Львів King Cross",
+            "Відділ сервісу ( клієнтські ремонти)",
+            "Львівський ГО",
+        }
+        self.assertTrue(previous_sheet_aliases.issubset(SHEET_LOCATION_STORE_NAMES))
+        self.assertEqual(SHEET_LOCATION_STORE_NAMES["Відділ сервісу"], "Сервісний Центр")
+        self.assertEqual(SHEET_LOCATION_STORE_NAMES["Гавришкевича"], "Гавришкевича 5")
+        self.assertEqual(
+            SHEET_LOCATION_STORE_NAMES["Appleroom Львів (ТРЦ Victoria Gardens)"],
+            "ТРЦ Victoria Gardens (Паркінг)",
+        )
+        self.assertEqual(UNRESOLVED_SHEET_LOCATIONS, {})
         self.assertEqual(
             NON_STORE_COURIER_DEPARTMENTS,
             {"Відділ транспортної логістики"},
-        )
-        self.assertEqual(
-            UNRESOLVED_SHEET_LOCATIONS["Відділ сервісу"],
-            "Manual Store.id selection is required; Store IDs 38 and 50 are both "
-            "named 'Сервісний Центр'.",
         )
         self.assertEqual(SHEET_LOCATION_DISPLAY_NAMES["Львівський ГО"], "ЛГО")
 
@@ -152,8 +175,8 @@ class TestStaffSyncService(unittest.TestCase):
         self.db.commit()
 
         with patch(
-            "app.services.staff_sync_service.SHEET_LOCATION_STORE_IDS",
-            {"Sheet alias": self.store.id},
+            "app.services.staff_sync_service.SHEET_LOCATION_STORE_NAMES",
+            {"Sheet alias": self.store.name},
         ):
             report = sync_staff_rows(
                 self.db,
@@ -252,18 +275,39 @@ class TestStaffSyncService(unittest.TestCase):
             self.db.query(User).filter(User.telegram_id == 654321).first()
         )
 
-    def test_unresolved_service_location_is_logged_and_skipped(self):
+    def test_service_alias_uses_id_from_matching_database_store(self):
+        service_store = Store(
+            name="Сервісний Центр",
+            address="Сервісний Центр",
+            city="Львів",
+            latitude=49.82,
+            longitude=24.0,
+            network=StoreNetwork.JABKO,
+        )
+        user = User(
+            telegram_id=123456,
+            username="service_employee",
+            full_name="Service Employee",
+            role=UserRole.SELLER,
+            status=UserStatus.ACTIVE,
+        )
+        self.db.add_all([service_store, user])
+        self.db.commit()
+
         report = sync_staff_rows(
             self.db,
-            [HEADERS, self.sheet_row(store="Відділ сервісу")],
+            [HEADERS, self.sheet_row(username="service_employee", store="Відділ сервісу")],
             dry_run=True,
+            only_username="service_employee",
         )
 
-        self.assertEqual(report.skipped, 1)
-        self.assertEqual(report.unresolved_locations, {"Відділ сервісу": 1})
-        self.assertIn("38 and 50", report.location_issues[0])
+        self.assertEqual(report.skipped, 0)
+        self.assertEqual(report.alias_rows_available, 1)
+        self.assertEqual(report.alias_rows_processed, 1)
+        self.assertEqual(report.targeted_preview[0]["store_id"], service_store.id)
+        self.assertIsNone(user.store_id)
 
-    def test_create_required_location_is_skipped_without_store_creation(self):
+    def test_missing_store_is_skipped_without_creation(self):
         report = sync_staff_rows(
             self.db,
             [HEADERS, self.sheet_row(store="Відділ аксесуарів")],
@@ -271,7 +315,8 @@ class TestStaffSyncService(unittest.TestCase):
         )
 
         self.assertEqual(report.skipped, 1)
-        self.assertEqual(report.create_required_locations, {"Відділ аксесуарів": 1})
+        self.assertEqual(report.unresolved_locations, {"Відділ аксесуарів": 1})
+        self.assertEqual(report.create_required_locations, {})
         self.assertEqual(self.db.query(Store).count(), 1)
 
     def test_transport_department_is_courier_without_store_assignment(self):
