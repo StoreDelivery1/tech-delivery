@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 .envrc
+/backend/credentials/*.json
+/backend/credentials/google-sheets-service-account.json
 
 # Python
 __pycache__/

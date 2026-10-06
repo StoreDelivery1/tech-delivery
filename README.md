@@ -97,6 +97,12 @@ Run bot process from `backend/`:
 
 - `python -m app.bot.run`
 
+The bot process runs the daily Google Sheets staff sync scheduler. By default it runs at 03:15 in `Europe/Kyiv`; configure `STAFF_SYNC_HOUR`, `STAFF_SYNC_MINUTE`, and `STAFF_SYNC_TIMEZONE` in `backend/.env`. PostgreSQL advisory locking and the bot's single polling process prevent simultaneous scheduled runs. The scheduler does not run a sync immediately at bot startup.
+
+Safely check the configured next run without executing a sync:
+
+- `python -m app.services.staff_sync_scheduler --check`
+
 ## Docker
 
 Run PostgreSQL locally:

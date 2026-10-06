@@ -3,6 +3,7 @@ import logging
 
 from app.bot.bot import bot
 from app.bot.dispatcher import dp
+from app.services.staff_sync_scheduler import start_staff_sync_scheduler
 
 # Configure logging
 logging.basicConfig(
@@ -15,8 +16,14 @@ logger = logging.getLogger(__name__)
 
 async def main():
     logger.info("Bot starting...")
-    await dp.start_polling(bot)
-    logger.info("Bot stopped.")
+    scheduler = start_staff_sync_scheduler()
+    try:
+        await dp.start_polling(bot)
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+            logger.info("Staff sync scheduler stopped.")
+        logger.info("Bot stopped.")
 
 
 if __name__ == "__main__":
