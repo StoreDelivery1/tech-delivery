@@ -150,6 +150,9 @@ def manager_main_menu(active_count: int = 0, all_count: int = 0, incoming_count:
                 KeyboardButton(
                     text=f"📥 До нас їдуть ({incoming_count})",
                 ),
+                KeyboardButton(
+                    text="📦 Замовили",
+                ),
             ],
             [
                 KeyboardButton(

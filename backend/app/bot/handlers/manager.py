@@ -1,5 +1,6 @@
 import logging
 import math
+from html import escape
 from datetime import datetime, timedelta, date
 
 from aiogram import F, Router
@@ -1413,6 +1414,123 @@ def _build_incoming_delivery_detail_message(order: Order) -> str:
     return "\n".join(lines)
 
 
+_REQUESTED_ORDER_STATUS_LABELS = {
+    OrderStatus.AWAITING_CONFIRMATION: "Очікує підтвердження",
+    OrderStatus.DELIVERY_PROBLEM: "Проблема доставки",
+}
+
+
+def _requested_order_status_label(order: Order) -> str:
+    status = order.status
+    status_value = status.value if hasattr(status, "value") else str(status)
+    return _REQUESTED_ORDER_STATUS_LABELS.get(
+        status,
+        _STATUS_LABELS.get(status_value, status_value),
+    )
+
+
+def _build_requested_orders_message(
+    orders: list[Order],
+    page: int = 0,
+    page_size: int = _MY_ORDERS_PAGE_SIZE,
+) -> str:
+    if not orders:
+        return "📦 Замовили\n\nНемає активних замовлень."
+
+    total_pages = max(1, math.ceil(len(orders) / page_size))
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    visible_orders = orders[start : start + page_size]
+    lines = [f"📦 Замовили ({len(orders)})", ""]
+
+    for index, order in enumerate(visible_orders, start=start + 1):
+        requester_store = format_store_name(order.to_store) if order.to_store else "—"
+        description = escape(order.description or "—")
+        lines.extend(
+            [
+                f"{index}. {escape(requester_store)}",
+                f"   {description}",
+                f"   Статус: {escape(_requested_order_status_label(order))}",
+                f"   #{order.id}",
+                "",
+            ]
+        )
+
+    if total_pages > 1:
+        lines.append(f"Сторінка {page + 1} з {total_pages}")
+    return "\n".join(lines)
+
+
+def _build_requested_orders_keyboard(
+    orders: list[Order],
+    page: int = 0,
+    page_size: int = _MY_ORDERS_PAGE_SIZE,
+) -> InlineKeyboardMarkup:
+    total_pages = max(1, math.ceil(len(orders) / page_size))
+    page = max(0, min(page, total_pages - 1))
+    start = page * page_size
+    end = start + page_size
+    buttons = []
+
+    for order in orders[start:end]:
+        requester_store = format_store_name(order.to_store) if order.to_store else "—"
+        description = " ".join((order.description or "—").split())
+        button_text = f"📦 #{order.id} — {requester_store} — {description}"
+        if len(button_text) > 64:
+            button_text = button_text[:61] + "..."
+        buttons.append(
+            [InlineKeyboardButton(text=button_text, callback_data=f"manager_requested_detail:{order.id}")]
+        )
+
+    if total_pages > 1:
+        navigation = []
+        if page > 0:
+            navigation.append(
+                InlineKeyboardButton(
+                    text="◀️ Попередня",
+                    callback_data=f"manager_requested_orders:{page - 1}",
+                )
+            )
+        if end < len(orders):
+            navigation.append(
+                InlineKeyboardButton(
+                    text="Наступна ▶️",
+                    callback_data=f"manager_requested_orders:{page + 1}",
+                )
+            )
+        buttons.append(navigation)
+
+    buttons.append(
+        [InlineKeyboardButton(text="⬅️ До меню", callback_data="manager_requested_back_to_menu")]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _build_requested_order_detail_message(order: Order) -> str:
+    requester_store = format_store_name(order.to_store) if order.to_store else "—"
+    description = escape(order.description or "—")
+    return (
+        f"📦 <b>Замовлення #{order.id}</b>\n\n"
+        f"Від:\n{escape(requester_store)}\n\n"
+        f"Товар:\n{description}\n\n"
+        f"Статус:\n{escape(_requested_order_status_label(order), quote=False)}\n\n"
+        f"Створено:\n{_fmt_dt(order.created_at)}"
+    )
+
+
+def _build_requested_order_detail_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data="manager_requested_orders:0",
+                )
+            ]
+        ]
+    )
+
+
 @router.message(F.text == "👤 Профіль", ManagerFilter())
 async def profile_handler(message: Message):
     from app.models.store import Store
@@ -1658,5 +1776,112 @@ async def incoming_delivery_timeline_callback(callback: CallbackQuery):
         await callback.message.edit_text(text, parse_mode="HTML", reply_markup=keyboard)
         await callback.answer()
 
+    finally:
+        db.close()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# REQUESTED ORDERS MODULE
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.message(F.text == "📦 Замовили", ManagerFilter())
+async def requested_orders_handler(message: Message):
+    db = SessionLocal()
+    try:
+        manager = ActivationService.get_manager(db, message.from_user.id)
+        if manager is None:
+            await message.answer("❌ Користувача не знайдено.")
+            return
+
+        orders = ManagerService.get_active_orders_requested_from_store(db, manager.id)
+        await message.answer(
+            _build_requested_orders_message(orders),
+            parse_mode="HTML",
+            reply_markup=_build_requested_orders_keyboard(orders),
+        )
+    except ValueError as exc:
+        await message.answer(f"❌ {exc}")
+    finally:
+        db.close()
+
+
+@router.callback_query(F.data.startswith("manager_requested_orders:"), ManagerFilter())
+async def requested_orders_page_callback(callback: CallbackQuery):
+    db = SessionLocal()
+    try:
+        page = int(callback.data.split(":", 1)[1])
+        manager = ActivationService.get_manager(db, callback.from_user.id)
+        if manager is None:
+            await callback.answer("❌ Користувача не знайдено", show_alert=True)
+            return
+
+        orders = ManagerService.get_active_orders_requested_from_store(db, manager.id)
+        await callback.message.edit_text(
+            _build_requested_orders_message(orders, page=page),
+            parse_mode="HTML",
+            reply_markup=_build_requested_orders_keyboard(orders, page=page),
+        )
+        await callback.answer()
+    except (ValueError, TypeError):
+        await callback.answer("❌ Некоректна сторінка", show_alert=True)
+    finally:
+        db.close()
+
+
+@router.callback_query(F.data.startswith("manager_requested_detail:"), ManagerFilter())
+async def requested_order_detail_callback(callback: CallbackQuery):
+    db = SessionLocal()
+    try:
+        order_id = int(callback.data.split(":", 1)[1])
+        manager = ActivationService.get_manager(db, callback.from_user.id)
+        if manager is None:
+            await callback.answer("❌ Користувача не знайдено", show_alert=True)
+            return
+
+        order = ManagerService.get_active_order_requested_from_store(
+            db,
+            manager.id,
+            order_id,
+        )
+        if order is None:
+            await callback.answer(
+                "❌ Активне замовлення не знайдено або немає доступу.",
+                show_alert=True,
+            )
+            return
+
+        await callback.message.edit_text(
+            _build_requested_order_detail_message(order),
+            parse_mode="HTML",
+            reply_markup=_build_requested_order_detail_keyboard(),
+        )
+        await callback.answer()
+    except (ValueError, TypeError):
+        await callback.answer("❌ Некоректний ID замовлення", show_alert=True)
+    finally:
+        db.close()
+
+
+@router.callback_query(F.data == "manager_requested_back_to_menu", ManagerFilter())
+async def requested_orders_back_to_menu_callback(callback: CallbackQuery):
+    db = SessionLocal()
+    try:
+        manager = ActivationService.get_manager(db, callback.from_user.id)
+        if manager is None:
+            await callback.answer("❌ Користувача не знайдено", show_alert=True)
+            return
+
+        active, completed = ManagerService.get_my_created_orders(db, manager.id)
+        incoming_count = ManagerService.get_incoming_delivery_count(db, manager.id)
+        await callback.message.answer(
+            "📋 Головне меню",
+            reply_markup=manager_main_menu(
+                active_count=len(active),
+                all_count=len(active) + len(completed),
+                incoming_count=incoming_count,
+            ),
+        )
+        await callback.answer()
     finally:
         db.close()

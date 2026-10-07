@@ -18,6 +18,15 @@ _COMPLETED_STATUSES = [
     OrderStatus.CANCELED,
 ]
 
+_REQUESTED_ORDER_ACTIVE_STATUSES = [
+    OrderStatus.WAITING_FOR_COURIER,
+    OrderStatus.ACCEPTED,
+    OrderStatus.PICKED_UP,
+    OrderStatus.DELIVERING,
+    OrderStatus.AWAITING_CONFIRMATION,
+    OrderStatus.DELIVERY_PROBLEM,
+]
+
 
 class ManagerService:
 
@@ -186,6 +195,43 @@ class ManagerService:
             .order_by(Order.id.desc())
             .all()
         )
+
+    @staticmethod
+    def _requested_orders_query(db: Session, manager: User):
+        return (
+            db.query(Order)
+            .join(Order.creator)
+            .filter(
+                Order.from_store_id == manager.store_id,
+                Order.to_store_id != manager.store_id,
+                User.store_id == Order.to_store_id,
+                Order.status.in_(_REQUESTED_ORDER_ACTIVE_STATUSES),
+            )
+            .options(
+                joinedload(Order.from_store),
+                joinedload(Order.to_store),
+                joinedload(Order.creator).joinedload(User.store),
+            )
+        )
+
+    @staticmethod
+    def get_active_orders_requested_from_store(
+        db: Session,
+        user_id: int,
+    ) -> list[Order]:
+        """Return active product requests that other stores placed with this manager's store."""
+        manager = ManagerService.get_profile(db, user_id)
+        return ManagerService._requested_orders_query(db, manager).order_by(Order.id.desc()).all()
+
+    @staticmethod
+    def get_active_order_requested_from_store(
+        db: Session,
+        user_id: int,
+        order_id: int,
+    ) -> Order | None:
+        """Return one active request only if it is assigned to this manager's store as source."""
+        manager = ManagerService.get_profile(db, user_id)
+        return ManagerService._requested_orders_query(db, manager).filter(Order.id == order_id).one_or_none()
 
     @staticmethod
     def get_incoming_deliveries_by_date_range(
