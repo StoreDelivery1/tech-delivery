@@ -1,10 +1,12 @@
+from sqlalchemy import and_, not_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.order import Order, OrderStatus
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, UserStatus
 from app.schemas.order import ManagerOrderCreate
 from app.services.order_service import OrderService
 from app.services.distribution_service import DistributionService
+from app.services.order_status_service import OrderStatusService
 
 _ACTIVE_STATUSES = [
     OrderStatus.WAITING_FOR_COURIER,
@@ -21,11 +23,30 @@ _COMPLETED_STATUSES = [
 _REQUESTED_ORDER_ACTIVE_STATUSES = [
     OrderStatus.WAITING_FOR_COURIER,
     OrderStatus.ACCEPTED,
+]
+
+_PRODUCT_ORDER_INCOMING_STATUSES = [
     OrderStatus.PICKED_UP,
     OrderStatus.DELIVERING,
-    OrderStatus.AWAITING_CONFIRMATION,
-    OrderStatus.DELIVERY_PROBLEM,
 ]
+
+
+def _product_order_condition():
+    """Product orders are created by a manager of the destination store."""
+    return and_(
+        Order.from_store_id != Order.to_store_id,
+        User.store_id.is_not(None),
+        User.store_id == Order.to_store_id,
+    )
+
+
+def _is_product_order(order: Order) -> bool:
+    creator = order.creator
+    return (
+        order.from_store_id != order.to_store_id
+        and creator is not None
+        and creator.store_id == order.to_store_id
+    )
 
 
 class ManagerService:
@@ -175,25 +196,37 @@ class ManagerService:
         """
         manager = ManagerService.get_profile(db, user_id)
 
+        return (
+            ManagerService._incoming_active_deliveries_query(db, manager)
+            .order_by(Order.id.desc())
+            .all()
+        )
+
+    @staticmethod
+    def _incoming_active_deliveries_query(db: Session, manager: User):
         incoming_active_statuses = [
             OrderStatus.ACCEPTED,
             OrderStatus.PICKED_UP,
             OrderStatus.DELIVERING,
         ]
-
+        product_order = _product_order_condition()
         return (
             db.query(Order)
+            .join(Order.creator)
             .filter(
                 Order.to_store_id == manager.store_id,
                 Order.status.in_(incoming_active_statuses),
+                or_(
+                    not_(product_order),
+                    Order.status.in_(_PRODUCT_ORDER_INCOMING_STATUSES),
+                ),
             )
             .options(
                 joinedload(Order.courier),
                 joinedload(Order.from_store),
                 joinedload(Order.to_store),
+                joinedload(Order.creator).joinedload(User.store),
             )
-            .order_by(Order.id.desc())
-            .all()
         )
 
     @staticmethod
@@ -232,6 +265,31 @@ class ManagerService:
         """Return one active request only if it is assigned to this manager's store as source."""
         manager = ManagerService.get_profile(db, user_id)
         return ManagerService._requested_orders_query(db, manager).filter(Order.id == order_id).one_or_none()
+
+    @staticmethod
+    def transfer_requested_product_order_to_courier(
+        db: Session,
+        user_id: int,
+        order_id: int,
+    ) -> Order:
+        """Mark an accepted product order as picked up by its assigned courier."""
+        manager = ManagerService.get_profile(db, user_id)
+        if manager.status != UserStatus.ACTIVE:
+            raise ValueError("Manager is not active")
+
+        order = db.get(Order, order_id)
+        if order is None:
+            raise ValueError("Order not found")
+        if order.from_store_id != manager.store_id:
+            raise ValueError("Order does not belong to the manager's store")
+        if not _is_product_order(order):
+            raise ValueError("Order is not a product request")
+        if order.status != OrderStatus.ACCEPTED:
+            raise ValueError("Only accepted orders can be transferred to the courier")
+        if order.courier_id is None:
+            raise ValueError("Order has no assigned courier")
+
+        return OrderStatusService.pickup(db, order)
 
     @staticmethod
     def get_incoming_deliveries_by_date_range(
@@ -278,18 +336,4 @@ class ManagerService:
     ) -> int:
         """Get count of active incoming deliveries."""
         manager = ManagerService.get_profile(db, user_id)
-
-        incoming_active_statuses = [
-            OrderStatus.ACCEPTED,
-            OrderStatus.PICKED_UP,
-            OrderStatus.DELIVERING,
-        ]
-
-        return (
-            db.query(Order)
-            .filter(
-                Order.to_store_id == manager.store_id,
-                Order.status.in_(incoming_active_statuses),
-            )
-            .count()
-        )
+        return ManagerService._incoming_active_deliveries_query(db, manager).count()

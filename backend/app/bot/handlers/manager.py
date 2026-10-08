@@ -26,7 +26,7 @@ from app.models.user import CourierAvailability
 from app.schemas.order import ManagerOrderCreate
 from app.services.activation_service import ActivationService
 from app.services.distribution_service import DistributionService
-from app.services.manager_service import ManagerService
+from app.services.manager_service import ManagerService, _is_product_order
 from app.services.notification_service import NotificationService
 from app.services.order_status_service import OrderStatusService
 from app.services.store_service import StoreService
@@ -1518,17 +1518,67 @@ def _build_requested_order_detail_message(order: Order) -> str:
     )
 
 
-def _build_requested_order_detail_keyboard() -> InlineKeyboardMarkup:
+def _can_transfer_requested_order(order: Order, manager) -> bool:
+    return (
+        _is_product_order(order)
+        and manager.store_id == order.from_store_id
+        and order.status == OrderStatus.ACCEPTED
+        and order.courier_id is not None
+    )
+
+
+def _build_requested_order_detail_keyboard(
+    order: Order,
+    manager,
+) -> InlineKeyboardMarkup:
+    buttons = []
+    if _can_transfer_requested_order(order, manager):
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text="📦 Передати товар",
+                    callback_data=f"manager_requested_transfer:{order.id}",
+                )
+            ]
+        )
+    buttons.append(
+        [
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data="manager_requested_orders:0",
+            )
+        ]
+    )
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def _build_requested_order_transfer_success_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="⬅️ Назад",
+                    text="⬅️ До замовлень",
                     callback_data="manager_requested_orders:0",
                 )
             ]
         ]
     )
+
+
+def _requested_order_transfer_error_message(error: ValueError) -> str:
+    message = str(error).lower()
+    if "not found" in message:
+        return "❌ Замовлення не знайдено."
+    if "no assigned courier" in message:
+        return "❌ До замовлення не призначено кур'єра."
+    if "only accepted" in message or "cannot be picked up" in message:
+        return "❌ Замовлення вже передано або його статус змінився."
+    if any(
+        phrase in message
+        for phrase in ("not a manager", "not active", "does not belong", "not a product")
+    ):
+        return "❌ Недостатньо прав для передачі цього замовлення."
+    return "❌ Не вдалося передати товар. Оновіть список і спробуйте ще раз."
 
 
 @router.message(F.text == "👤 Профіль", ManagerFilter())
@@ -1854,11 +1904,52 @@ async def requested_order_detail_callback(callback: CallbackQuery):
         await callback.message.edit_text(
             _build_requested_order_detail_message(order),
             parse_mode="HTML",
-            reply_markup=_build_requested_order_detail_keyboard(),
+            reply_markup=_build_requested_order_detail_keyboard(order, manager),
         )
         await callback.answer()
     except (ValueError, TypeError):
         await callback.answer("❌ Некоректний ID замовлення", show_alert=True)
+    finally:
+        db.close()
+
+
+@router.callback_query(F.data.startswith("manager_requested_transfer:"), ManagerFilter())
+async def requested_order_transfer_callback(callback: CallbackQuery):
+    try:
+        order_id = int(callback.data.split(":", 1)[1])
+    except (ValueError, TypeError):
+        await callback.answer("❌ Некоректний ID замовлення.", show_alert=True)
+        return
+
+    db = SessionLocal()
+    try:
+        manager = ActivationService.get_manager(db, callback.from_user.id)
+        if manager is None:
+            await callback.answer("❌ Недостатньо прав для передачі цього замовлення.", show_alert=True)
+            return
+
+        try:
+            ManagerService.transfer_requested_product_order_to_courier(
+                db,
+                manager.id,
+                order_id,
+            )
+        except ValueError as exc:
+            await callback.answer(_requested_order_transfer_error_message(exc), show_alert=True)
+            return
+        except Exception:
+            logger.exception("Failed to transfer requested product order %s", order_id)
+            await callback.answer(
+                "❌ Не вдалося передати товар. Оновіть список і спробуйте ще раз.",
+                show_alert=True,
+            )
+            return
+
+        await callback.message.edit_text(
+            "✅ Товар передано кур'єру.",
+            reply_markup=_build_requested_order_transfer_success_keyboard(),
+        )
+        await callback.answer()
     finally:
         db.close()
 
