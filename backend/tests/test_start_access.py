@@ -148,7 +148,7 @@ class TestStartAccess(unittest.TestCase):
         self.assertIn("магазин не призначено", message.answers[0])
         self.assertIsNone(message.reply_markups[0])
 
-    def test_unsupported_role_is_denied(self):
+    def test_seller_gets_manager_menu(self):
         state = _FakeState()
         message = _FakeMessage(user_id=27)
         seller = User(
@@ -156,13 +156,33 @@ class TestStartAccess(unittest.TestCase):
             role=UserRole.SELLER,
             status=UserStatus.ACTIVE,
             telegram_id=27,
+            store_id=1,
+        )
+
+        with patch("app.bot.handlers.start.SessionLocal", return_value=_FakeDb()):
+            with patch("app.bot.handlers.start.ActivationService.get_by_telegram", return_value=seller):
+                with patch("app.bot.handlers.start.ActivationService.update_last_login"):
+                    with patch("app.bot.handlers.start.ManagerService.get_my_created_orders", return_value=([], [])):
+                        asyncio.run(start_handler(message, state))
+
+        self.assertIn("Менеджер", message.answers[0])
+        self.assertIsNotNone(message.reply_markups[0])
+
+    def test_seller_without_store_is_denied(self):
+        state = _FakeState()
+        message = _FakeMessage(user_id=32)
+        seller = User(
+            full_name="Unassigned Employee",
+            role=UserRole.SELLER,
+            status=UserStatus.ACTIVE,
+            telegram_id=32,
         )
 
         with patch("app.bot.handlers.start.SessionLocal", return_value=_FakeDb()):
             with patch("app.bot.handlers.start.ActivationService.get_by_telegram", return_value=seller):
                 asyncio.run(start_handler(message, state))
 
-        self.assertIn("не має доступу", message.answers[0])
+        self.assertIn("магазин не призначено", message.answers[0])
         self.assertIsNone(message.reply_markups[0])
 
     def test_missing_role_is_reported(self):

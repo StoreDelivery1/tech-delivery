@@ -3,7 +3,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 
 from app.core.security import get_current_user
-from app.models.user import User, UserRole
+from app.models.user import MANAGER_ROLES, User, UserRole
 
 
 def require_roles(
@@ -40,10 +40,13 @@ def manager_required(
     ],
 ) -> User:
 
-    require_roles(
-        current_user,
-        UserRole.MANAGER,
-    )
+    require_roles(current_user, *MANAGER_ROLES)
+
+    if current_user.store_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager must be assigned to a store",
+        )
 
     return current_user
 

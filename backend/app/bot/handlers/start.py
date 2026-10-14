@@ -12,7 +12,7 @@ from app.bot.keyboards.main_menu import (
 )
 from app.bot.states.activation import ActivationState
 from app.database.session import SessionLocal
-from app.models.user import UserRole, UserStatus
+from app.models.user import MANAGER_ROLES, UserRole, UserStatus
 from app.services.activation_service import ActivationService
 from app.services.manager_service import ManagerService
 
@@ -47,7 +47,7 @@ async def start_handler(
                 "Ви увійшли як <b>Адміністратор</b>."
             )
             reply_markup = admin_main_menu()
-        elif user.role == UserRole.MANAGER:
+        elif user.role in MANAGER_ROLES:
             if user.store_id is None:
                 response_text = (
                     "Ваш обліковий запис знайдено, але магазин не призначено. "

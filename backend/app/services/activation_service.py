@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from app.models.user import User, UserRole, UserStatus
+from app.models.user import MANAGER_ROLES, User, UserRole, UserStatus
 
 
 class ActivationService:
@@ -108,7 +108,7 @@ class ActivationService:
             db.query(User)
             .filter(
                 User.telegram_id == telegram_id,
-                User.role == UserRole.MANAGER,
+                User.role.in_(MANAGER_ROLES),
                 User.status == UserStatus.ACTIVE,
             )
             .first()

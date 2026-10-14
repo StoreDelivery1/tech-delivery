@@ -2,7 +2,7 @@ from sqlalchemy import and_, not_, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.order import Order, OrderStatus
-from app.models.user import User, UserRole, UserStatus
+from app.models.user import MANAGER_ROLES, User, UserRole, UserStatus
 from app.schemas.order import ManagerOrderCreate
 from app.services.order_service import OrderService
 from app.services.distribution_service import DistributionService
@@ -62,7 +62,7 @@ class ManagerService:
         if manager is None:
             raise ValueError("Manager not found")
 
-        if manager.role != UserRole.MANAGER:
+        if manager.role not in MANAGER_ROLES:
             raise ValueError("User is not a manager")
 
         if manager.store_id is None:

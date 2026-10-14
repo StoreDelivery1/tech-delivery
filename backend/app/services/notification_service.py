@@ -335,14 +335,16 @@ class NotificationService:
         if order.to_store is None:
             return
 
-        from app.models.user import User, UserRole
+        from app.models.user import MANAGER_ROLES, User, UserStatus
 
         # Get all managers assigned to destination store
         managers = (
             db.query(User)
             .filter(
                 User.store_id == order.to_store_id,
-                User.role == UserRole.MANAGER,
+                User.role.in_(MANAGER_ROLES),
+                User.status == UserStatus.ACTIVE,
+                User.telegram_id.isnot(None),
             )
             .all()
         )
@@ -407,13 +409,15 @@ class NotificationService:
         if order.to_store is None:
             return
 
-        from app.models.user import User, UserRole
+        from app.models.user import MANAGER_ROLES, User, UserStatus
 
         managers = (
             db.query(User)
             .filter(
                 User.store_id == order.to_store_id,
-                User.role == UserRole.MANAGER,
+                User.role.in_(MANAGER_ROLES),
+                User.status == UserStatus.ACTIVE,
+                User.telegram_id.isnot(None),
             )
             .all()
         )
@@ -491,13 +495,13 @@ class NotificationService:
         if order.to_store is None or order.courier is None:
             return
 
-        from app.models.user import User, UserRole, UserStatus
+        from app.models.user import MANAGER_ROLES, User, UserStatus
 
         managers = (
             db.query(User)
             .filter(
                 User.store_id == order.to_store_id,
-                User.role == UserRole.MANAGER,
+                User.role.in_(MANAGER_ROLES),
                 User.status == UserStatus.ACTIVE,
                 User.telegram_id.isnot(None),
             )

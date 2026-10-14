@@ -3,11 +3,54 @@ from datetime import datetime, timedelta
 import re
 from unittest.mock import Mock, patch
 
-from app.models.user import User
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.database.base import Base
+from app.models.order import Order
+from app.models.store import Store, StoreNetwork
+from app.models.user import User, UserRole, UserStatus
 from app.services.activation_service import ActivationService
 
 
 class TestActivationService(unittest.TestCase):
+    def test_get_manager_includes_active_seller_but_rejects_inactive_seller(self):
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = Session(engine)
+        store = Store(
+            name="Test Store",
+            address="Address",
+            city="Lviv",
+            latitude=49.0,
+            longitude=24.0,
+            network=StoreNetwork.APPLE_ROOM,
+        )
+        db.add(store)
+        db.flush()
+        active_seller = User(
+            telegram_id=501,
+            full_name="Active Seller",
+            role=UserRole.SELLER,
+            status=UserStatus.ACTIVE,
+            store_id=store.id,
+        )
+        inactive_seller = User(
+            telegram_id=502,
+            full_name="Inactive Seller",
+            role=UserRole.SELLER,
+            status=UserStatus.INACTIVE,
+            store_id=store.id,
+        )
+        db.add_all([active_seller, inactive_seller])
+        db.commit()
+
+        self.assertEqual(ActivationService.get_manager(db, 501).role, UserRole.SELLER)
+        self.assertIsNone(ActivationService.get_manager(db, 502))
+
+        db.close()
+        engine.dispose()
+
     def test_generate_code_has_td_prefix_and_total_length_10(self):
         db = Mock()
         db.query.return_value.filter.return_value.first.return_value = None

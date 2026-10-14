@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.models.user import User, UserRole
+from app.models.user import MANAGER_ROLES, User, UserRole
 from app.schemas.user import UserCreate, UserUpdate
 from app.services.activation_service import ActivationService
 
@@ -14,7 +14,7 @@ class UserService:
 
         if role in {UserRole.ADMIN, UserRole.COURIER}:
             data["store_id"] = None
-        elif role == UserRole.MANAGER and data.get("store_id") is None:
+        elif role in MANAGER_ROLES and data.get("store_id") is None:
             raise ValueError("Manager must have a store_id")
 
         return data
@@ -25,7 +25,7 @@ class UserService:
 
         if role in {UserRole.ADMIN, UserRole.COURIER}:
             data["store_id"] = None
-        elif role == UserRole.MANAGER and data.get("store_id") is None and user.store_id is None:
+        elif role in MANAGER_ROLES and data.get("store_id") is None and user.store_id is None:
             raise ValueError("Manager must have a store_id")
 
         for key, value in data.items():

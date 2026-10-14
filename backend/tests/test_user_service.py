@@ -17,6 +17,26 @@ class TestUserServiceValidation(unittest.TestCase):
                 ),
             )
 
+    def test_create_seller_requires_store_id_and_preserves_role(self):
+        with self.assertRaises(ValueError):
+            UserService._normalize_user_data(
+                UserCreate(
+                    full_name="Seller",
+                    role=UserRole.SELLER,
+                    store_id=None,
+                )
+            )
+
+        normalized = UserService._normalize_user_data(
+            UserCreate(
+                full_name="Seller",
+                role=UserRole.SELLER,
+                store_id=7,
+            )
+        )
+        self.assertEqual(normalized["role"], UserRole.SELLER)
+        self.assertEqual(normalized["store_id"], 7)
+
     def test_create_admin_store_id_is_forced_to_none(self):
         normalized = UserService._normalize_user_data(
             UserCreate(
@@ -45,6 +65,15 @@ class TestUserServiceValidation(unittest.TestCase):
         with self.assertRaises(ValueError):
             UserService._normalize_user_instance(
                 user=user,
+                data=UserUpdate(full_name="Updated").model_dump(exclude_unset=True),
+            )
+
+    def test_update_seller_requires_store_id(self):
+        seller = User(role=UserRole.SELLER, full_name="Seller")
+
+        with self.assertRaises(ValueError):
+            UserService._normalize_user_instance(
+                user=seller,
                 data=UserUpdate(full_name="Updated").model_dump(exclude_unset=True),
             )
 

@@ -14,6 +14,9 @@ class UserRole(str, enum.Enum):
     SELLER = "SELLER"
 
 
+MANAGER_ROLES = (UserRole.MANAGER, UserRole.SELLER)
+
+
 class UserStatus(str, enum.Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
