@@ -69,22 +69,22 @@ def run_scheduled_staff_sync() -> SyncReport | None:
         report = sync_staff_rows(session, values, dry_run=False)
         logger.info(
             "Scheduled staff sync completed in %.2f seconds: "
-            "created=%d updated=%d blocked=%d skipped=%d errors=%d details=%s",
+            "created=%d updated=%d blocked=%d skipped=%d errors=%d",
             monotonic() - started_at,
             report.created,
             report.updated,
             report.blocked,
             report.skipped,
             len(report.errors),
-            report.errors,
         )
         return report
-    except Exception:
+    except Exception as exc:
         if session is not None:
             session.rollback()
-        logger.exception(
-            "Scheduled Google Sheets staff sync failed after %.2f seconds.",
+        logger.error(
+            "Scheduled Google Sheets staff sync failed after %.2f seconds (%s).",
             monotonic() - started_at,
+            type(exc).__name__,
         )
         return None
     finally:
@@ -99,8 +99,11 @@ def run_scheduled_staff_sync() -> SyncReport | None:
                 lock_connection.commit()
                 if not unlocked:
                     logger.warning("PostgreSQL staff sync advisory lock was not held at release.")
-            except Exception:
-                logger.exception("Failed to release PostgreSQL staff sync advisory lock.")
+            except Exception as exc:
+                logger.error(
+                    "Failed to release PostgreSQL staff sync advisory lock (%s).",
+                    type(exc).__name__,
+                )
             finally:
                 lock_connection.close()
         _SYNC_RUN_LOCK.release()
@@ -146,10 +149,13 @@ def start_staff_sync_scheduler() -> BackgroundScheduler | None:
             job.next_run_time if job else "unknown",
         )
         return scheduler
-    except Exception:
+    except Exception as exc:
         if scheduler is not None and scheduler.running:
             scheduler.shutdown(wait=False)
-        logger.exception("Could not start staff sync scheduler; bot will continue without it.")
+        logger.error(
+            "Could not start staff sync scheduler; bot will continue without it (%s).",
+            type(exc).__name__,
+        )
         return None
 
 

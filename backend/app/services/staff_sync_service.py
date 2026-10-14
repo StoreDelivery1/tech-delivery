@@ -204,13 +204,15 @@ def parse_staff_rows(values: list[list[str]]) -> tuple[list[StaffRow], int]:
     return parsed, rows_found
 
 
-def role_for_position(position: str) -> UserRole:
+def role_for_position(position: str) -> UserRole | None:
     normalized_position = _normalize_text(position)
     if normalized_position in {"кур'єр", "водій - кур'єр"}:
         return UserRole.COURIER
     if normalized_position == "менеджер":
         return UserRole.MANAGER
-    return UserRole.SELLER
+    if normalized_position == "продавець":
+        return UserRole.SELLER
+    return None
 
 
 def _normalized_location(value: str) -> str:
@@ -275,7 +277,8 @@ def sync_staff_rows(
         ]
         if len(rows) != 1:
             raise ValueError(
-                f"Expected exactly one Sheet row for username {only_username!r}; found {len(rows)}"
+                "Expected exactly one Sheet row for the requested username; "
+                f"found {len(rows)}"
             )
         rows_found = 1
 
@@ -302,7 +305,7 @@ def sync_staff_rows(
     }
 
     for row in rows:
-        row_label = f"row {row.row_number} ({row.full_name or 'no name'})"
+        row_label = f"row {row.row_number}"
         if row.telegram_id_missing:
             report.missing_telegram_ids.append(row_label)
             if row.errors:
@@ -320,7 +323,7 @@ def sync_staff_rows(
             report.skipped += 1
             continue
         if row.telegram_id in duplicate_ids:
-            message = f"{row_label}: duplicate Telegram ID {row.telegram_id} in sheet"
+            message = f"{row_label}: duplicate Telegram ID in sheet"
             report.errors.append(message)
             report.skipped += 1
             logger.warning("Skipped %s", message)
@@ -350,6 +353,17 @@ def sync_staff_rows(
             logger.warning("Skipped %s", message)
             continue
 
+        desired_role = (
+            UserRole.COURIER
+            if resolution == "non_store_courier_department"
+            else role_for_position(row.position)
+        )
+        if desired_role is None:
+            report.errors.append(f"{row_label}: unsupported staff position")
+            report.skipped += 1
+            logger.warning("Skipped row %d: unsupported staff position", row.row_number)
+            continue
+
         if resolution == "alias":
             report.alias_rows_processed += 1
             logger.info(
@@ -368,11 +382,6 @@ def sync_staff_rows(
 
         user = ActivationService.get_by_telegram(db, row.telegram_id)
         desired_status = UserStatus.INACTIVE if row.dismissed else UserStatus.ACTIVE
-        desired_role = (
-            UserRole.COURIER
-            if resolution == "non_store_courier_department"
-            else role_for_position(row.position)
-        )
         effective_role = (
             user.role
             if user is not None and user.role == UserRole.ADMIN
@@ -384,16 +393,13 @@ def sync_staff_rows(
                 {
                     "action": action,
                     "sheet_row": row.row_number,
-                    "telegram_id": row.telegram_id,
-                    "username": row.username,
-                    "full_name": row.full_name,
+                    "telegram_id_present": row.telegram_id is not None,
+                    "username_present": row.username is not None,
                     "position": row.position,
-                    "source_location": row.store_name,
                     "store_id": store.id if store is not None else None,
                     "store_name": store.name if store is not None else None,
                     "role": effective_role.value,
                     "status": desired_status.value,
-                    "existing_user_id": user.id if user is not None else None,
                     "preserve_admin_role": user is not None and user.role == UserRole.ADMIN,
                 }
             )
@@ -403,11 +409,10 @@ def sync_staff_rows(
             if row.dismissed:
                 report.blocked += 1
             logger.info(
-                "%s create Telegram ID %s as %s (%s)",
+                "%s create staff row %d as %s",
                 "Would" if dry_run else "Will",
-                row.telegram_id,
+                row.row_number,
                 effective_role.value,
-                row.store_name,
             )
             if not dry_run:
                 db.add(
@@ -425,12 +430,7 @@ def sync_staff_rows(
         report.updated += 1
         if row.dismissed:
             report.blocked += 1
-        logger.info(
-            "%s update Telegram ID %s (%s)",
-            "Would" if dry_run else "Will",
-            row.telegram_id,
-            row.store_name,
-        )
+        logger.info("%s update staff row %d", "Would" if dry_run else "Will", row.row_number)
         if not dry_run:
             user.full_name = row.full_name
             if row.username is not None:

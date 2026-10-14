@@ -56,6 +56,7 @@ class TestStaffSyncScheduler(unittest.TestCase):
         sync.assert_called_once_with(session, [["header"]], dry_run=False)
         session.close.assert_called_once()
         self.assertTrue(any("created=2 updated=3 blocked=1 skipped=4 errors=1" in line for line in logs.output))
+        self.assertFalse(any("bad row" in line for line in logs.output))
 
     def test_job_failure_is_logged_and_rolled_back_without_raising(self):
         session = Mock()
@@ -72,6 +73,24 @@ class TestStaffSyncScheduler(unittest.TestCase):
         session.rollback.assert_called_once()
         session.close.assert_called_once()
         self.assertTrue(any("sync failed" in line for line in logs.output))
+        self.assertFalse(any("sensitive" in line for line in logs.output))
+
+    def test_source_failure_does_not_open_database_or_log_exception_details(self):
+        with (
+            patch("app.services.staff_sync_scheduler._acquire_distributed_lock", return_value=(None, True)),
+            patch(
+                "app.services.staff_sync_scheduler.GoogleSheetsService.read_staff_rows",
+                side_effect=RuntimeError("sensitive source response"),
+            ),
+            patch("app.services.staff_sync_scheduler.SessionLocal") as session_local,
+            self.assertLogs("app.services.staff_sync_scheduler", level="ERROR") as logs,
+        ):
+            result = run_scheduled_staff_sync()
+
+        self.assertIsNone(result)
+        session_local.assert_not_called()
+        self.assertTrue(any("RuntimeError" in line for line in logs.output))
+        self.assertFalse(any("sensitive source response" in line for line in logs.output))
 
     def test_concurrent_job_is_skipped_while_first_run_is_active(self):
         entered_sync = threading.Event()

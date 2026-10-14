@@ -23,8 +23,7 @@ class GoogleSheetsService:
         credentials_exists = credentials_path.is_file()
         credentials_size = credentials_path.stat().st_size if credentials_exists else None
         logger.info(
-            "Service Account file diagnostics: path=%s exists=%s size_bytes=%s empty=%s",
-            credentials_path.resolve(),
+            "Service Account file diagnostics: exists=%s size_bytes=%s empty=%s",
             credentials_exists,
             credentials_size,
             credentials_size == 0 if credentials_size is not None else None,
@@ -32,8 +31,7 @@ class GoogleSheetsService:
 
         if not credentials_exists:
             raise ValueError(
-                "Service Account JSON was not found at "
-                f"{credentials_path.resolve()}. Set GOOGLE_APPLICATION_CREDENTIALS to its path."
+                "Service Account JSON was not found. Check GOOGLE_APPLICATION_CREDENTIALS."
             )
 
         from google.oauth2.service_account import Credentials
@@ -46,10 +44,15 @@ class GoogleSheetsService:
             )
         except json.JSONDecodeError as exc:
             raise ValueError(
-                "Service Account JSON is invalid at "
-                f"{credentials_path.resolve()} "
-                f"(line={exc.lineno}, column={exc.colno}, char={exc.pos}, reason={exc.msg})"
+                "Service Account JSON is invalid "
+                f"(line={exc.lineno}, column={exc.colno}, reason={exc.msg})"
             ) from exc
+        except Exception as exc:
+            logger.error(
+                "Service Account credential load failed (%s)",
+                type(exc).__name__,
+            )
+            raise RuntimeError("Service Account credentials could not be loaded") from None
         worksheet = settings.GOOGLE_SHEET_NAME.replace("'", "''")
         requested_range = f"'{worksheet}'!A:G"
 
@@ -66,6 +69,7 @@ class GoogleSheetsService:
                 .execute()
             )
         except Exception as exc:
-            raise RuntimeError(f"Google Sheets read failed: {exc}") from exc
+            logger.error("Google Sheets read failed (%s)", type(exc).__name__)
+            raise RuntimeError("Google Sheets read failed") from None
 
         return response.get("values", [])

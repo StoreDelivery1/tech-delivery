@@ -15,17 +15,21 @@ from app.services.activation_service import ActivationService
 INACTIVE_ACCOUNT_MESSAGE = (
     "Ваш обліковий запис неактивний. Зверніться до адміністратора."
 )
+MANAGER_STORE_REQUIRED_MESSAGE = (
+    "Ваш обліковий запис менеджера не прив'язаний до магазину. "
+    "Зверніться до адміністратора."
+)
 
 
-async def _notify_inactive(update: Message | CallbackQuery) -> None:
+async def _notify_access_denied(update: Message | CallbackQuery, text: str) -> None:
     if isinstance(update, CallbackQuery) or hasattr(update, "message"):
         await update.answer(
-            INACTIVE_ACCOUNT_MESSAGE,
+            text,
             show_alert=True,
         )
         return
 
-    await update.answer(INACTIVE_ACCOUNT_MESSAGE)
+    await update.answer(text)
 
 
 async def _is_inactive_user(update: Message | CallbackQuery, db) -> bool:
@@ -34,7 +38,7 @@ async def _is_inactive_user(update: Message | CallbackQuery, db) -> bool:
 
     user = ActivationService.get_by_telegram(db, update.from_user.id)
     if user is not None and user.status == UserStatus.INACTIVE:
-        await _notify_inactive(update)
+        await _notify_access_denied(update, INACTIVE_ACCOUNT_MESSAGE)
         return True
 
     return False
@@ -71,7 +75,12 @@ class ManagerFilter(BaseFilter):
                 return False
 
             manager = ActivationService.get_manager(db, update.from_user.id)
-            return manager is not None
+            if manager is None:
+                return False
+            if manager.store_id is None:
+                await _notify_access_denied(update, MANAGER_STORE_REQUIRED_MESSAGE)
+                return False
+            return True
         finally:
             db.close()
 

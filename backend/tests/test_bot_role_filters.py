@@ -38,6 +38,7 @@ class TestBotRoleFilters(unittest.TestCase):
             role=UserRole.MANAGER,
             status=UserStatus.ACTIVE,
             telegram_id=11,
+            store_id=1,
         )
 
         with patch("app.bot.filters.roles.SessionLocal", return_value=_FakeDb()):
@@ -47,6 +48,59 @@ class TestBotRoleFilters(unittest.TestCase):
 
         self.assertTrue(allowed)
         self.assertEqual(update.answers, [])
+
+    def test_active_manager_without_store_is_denied_with_message(self):
+        update = _FakeMessage(user_id=16)
+        manager_without_store = User(
+            full_name="Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            telegram_id=16,
+        )
+
+        with patch("app.bot.filters.roles.SessionLocal", return_value=_FakeDb()):
+            with patch("app.bot.filters.roles.ActivationService.get_by_telegram", return_value=manager_without_store):
+                with patch("app.bot.filters.roles.ActivationService.get_manager", return_value=manager_without_store):
+                    allowed = asyncio.run(ManagerFilter().__call__(update))
+
+        self.assertFalse(allowed)
+        self.assertEqual(len(update.answers), 1)
+        self.assertIn("не прив'язаний до магазину", update.answers[0])
+
+    def test_manager_callback_without_store_is_denied_with_alert(self):
+        callback = _FakeCallback(user_id=17)
+        manager_without_store = User(
+            full_name="Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            telegram_id=17,
+        )
+
+        with patch("app.bot.filters.roles.SessionLocal", return_value=_FakeDb()):
+            with patch("app.bot.filters.roles.ActivationService.get_by_telegram", return_value=manager_without_store):
+                with patch("app.bot.filters.roles.ActivationService.get_manager", return_value=manager_without_store):
+                    allowed = asyncio.run(ManagerFilter().__call__(callback))
+
+        self.assertFalse(allowed)
+        self.assertEqual(len(callback.answers), 1)
+        self.assertIn("не прив'язаний до магазину", callback.answers[0][0])
+        self.assertTrue(callback.answers[0][1])
+
+    def test_non_manager_role_does_not_pass_manager_filter(self):
+        update = _FakeMessage(user_id=18)
+        courier = User(
+            full_name="Courier",
+            role=UserRole.COURIER,
+            status=UserStatus.ACTIVE,
+            telegram_id=18,
+        )
+
+        with patch("app.bot.filters.roles.SessionLocal", return_value=_FakeDb()):
+            with patch("app.bot.filters.roles.ActivationService.get_by_telegram", return_value=courier):
+                with patch("app.bot.filters.roles.ActivationService.get_manager", return_value=None):
+                    allowed = asyncio.run(ManagerFilter().__call__(update))
+
+        self.assertFalse(allowed)
 
     def test_inactive_manager_cannot_execute_manager_callback(self):
         callback = _FakeCallback(user_id=12)
@@ -117,6 +171,7 @@ class TestBotRoleFilters(unittest.TestCase):
             role=UserRole.MANAGER,
             status=UserStatus.ACTIVE,
             telegram_id=15,
+            store_id=1,
         )
 
         with patch("app.bot.filters.roles.SessionLocal", return_value=_FakeDb()):

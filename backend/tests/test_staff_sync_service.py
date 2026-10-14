@@ -66,6 +66,8 @@ class TestStaffSyncService(unittest.TestCase):
         self.assertEqual(role_for_position("Кур'єр"), UserRole.COURIER)
         self.assertEqual(role_for_position("Водій - кур'єр"), UserRole.COURIER)
         self.assertEqual(role_for_position("Менеджер"), UserRole.MANAGER)
+        self.assertEqual(role_for_position("Продавець"), UserRole.SELLER)
+        self.assertIsNone(role_for_position("Невідома посада"))
 
     def test_multiline_dismissal_header_is_recognized(self):
         headers = HEADERS.copy()
@@ -226,6 +228,9 @@ class TestStaffSyncService(unittest.TestCase):
         self.assertEqual(report.targeted_preview[0]["store_id"], self.store.id)
         self.assertEqual(report.targeted_preview[0]["role"], UserRole.ADMIN.value)
         self.assertTrue(report.targeted_preview[0]["preserve_admin_role"])
+        self.assertNotIn("telegram_id", report.targeted_preview[0])
+        self.assertNotIn("username", report.targeted_preview[0])
+        self.assertNotIn("full_name", report.targeted_preview[0])
         self.assertEqual(target.full_name, "Existing Admin")
         self.assertIsNone(
             self.db.query(User).filter(User.telegram_id == 654321).first()
@@ -491,6 +496,150 @@ class TestStaffSyncService(unittest.TestCase):
         self.assertEqual(report.skipped, 1)
         self.assertEqual(report.missing_telegram_ids, [])
         self.assertTrue(any("digits only" in error for error in report.errors))
+
+    def test_unknown_position_is_skipped_without_changing_existing_role(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        report = sync_staff_rows(
+            self.db,
+            [HEADERS, self.sheet_row(position="Невідома посада")],
+            dry_run=False,
+        )
+
+        self.assertEqual(report.skipped, 1)
+        self.assertEqual(manager.role, UserRole.MANAGER)
+        self.assertEqual(manager.status, UserStatus.ACTIVE)
+
+    def test_dismissed_employee_is_deactivated(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        report = sync_staff_rows(
+            self.db,
+            [HEADERS, self.sheet_row(position="Менеджер", dismissed="Так")],
+            dry_run=False,
+        )
+
+        self.assertEqual(report.blocked, 1)
+        self.assertEqual(manager.status, UserStatus.INACTIVE)
+        self.assertEqual(manager.role, UserRole.MANAGER)
+
+    def test_removed_employee_row_does_not_revoke_access_implicitly(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        sync_staff_rows(self.db, [HEADERS], dry_run=False)
+
+        self.db.refresh(manager)
+        self.assertEqual(manager.status, UserStatus.ACTIVE)
+
+    def test_missing_telegram_id_does_not_revoke_existing_access(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        report = sync_staff_rows(
+            self.db,
+            [HEADERS, self.sheet_row(position="Менеджер", telegram_id="")],
+            dry_run=False,
+        )
+
+        self.db.refresh(manager)
+        self.assertEqual(report.skipped, 1)
+        self.assertEqual(manager.status, UserStatus.ACTIVE)
+
+    def test_invalid_status_does_not_revoke_existing_access(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        report = sync_staff_rows(
+            self.db,
+            [HEADERS, self.sheet_row(position="Менеджер", dismissed="maybe")],
+            dry_run=False,
+        )
+
+        self.db.refresh(manager)
+        self.assertEqual(report.skipped, 1)
+        self.assertEqual(manager.status, UserStatus.ACTIVE)
+
+    def test_duplicate_ids_are_skipped_without_changing_existing_user(self):
+        manager = User(
+            telegram_id=123456,
+            full_name="Existing Manager",
+            role=UserRole.MANAGER,
+            status=UserStatus.ACTIVE,
+            store_id=self.store.id,
+        )
+        self.db.add(manager)
+        self.db.commit()
+
+        report = sync_staff_rows(
+            self.db,
+            [
+                HEADERS,
+                self.sheet_row(full_name="Row One", position="Продавець"),
+                self.sheet_row(full_name="Row Two", position="Менеджер"),
+            ],
+            dry_run=False,
+        )
+
+        self.db.refresh(manager)
+        self.assertEqual(report.skipped, 2)
+        self.assertEqual(manager.full_name, "Existing Manager")
+        self.assertEqual(manager.role, UserRole.MANAGER)
+        self.assertEqual(manager.status, UserStatus.ACTIVE)
+        self.assertNotIn("123456", " ".join(report.errors))
+
+    def test_sync_log_and_report_omit_employee_identifiers(self):
+        with self.assertLogs("app.services.staff_sync_service", level="WARNING") as logs:
+            report = sync_staff_rows(
+                self.db,
+                [
+                    HEADERS,
+                    self.sheet_row(full_name="Private Employee", telegram_id="123456"),
+                    self.sheet_row(full_name="Another Private Employee", telegram_id="123456"),
+                ],
+                dry_run=True,
+            )
+
+        combined_output = " ".join(logs.output + report.errors)
+        self.assertNotIn("Private Employee", combined_output)
+        self.assertNotIn("123456", combined_output)
 
 
 if __name__ == "__main__":
